@@ -4,3 +4,6 @@
 [submodule "third_party/quickjs"]
 	path = third_party/quickjs
 	url = https://github.com/quickjs-ng/quickjs.git
+[submodule "third_party/hidapi"]
+	path = third_party/hidapi
+	url = https://github.com/libusb/hidapi.git
