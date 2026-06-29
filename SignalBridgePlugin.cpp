@@ -11,8 +11,8 @@ OpenRGBPluginInfo SignalBridgePlugin::GetPluginInfo()
 {
     OpenRGBPluginInfo info;
 
-    info.Name = "SignalBridge Plugin";
-    info.Description = "Bridges OpenRGB signals to external integrations.";
+    info.Name = "Signal Bridge Plugin";
+    info.Description = "Brings support for SignalRGB JavaScript device plugins to OpenRGB.";
     info.Version = SIGNALBRIDGEPLUGIN_VERSION;
     info.Commit = SIGNALBRIDGEPLUGIN_COMMIT;
     info.URL = "";
