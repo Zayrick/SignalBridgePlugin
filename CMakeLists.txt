@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.16)
 
-project(SignalBridgePlugin LANGUAGES CXX)
+project(SignalBridgePlugin VERSION 0.1.0 LANGUAGES CXX)
 
 set(CMAKE_AUTOUIC ON)
 set(CMAKE_AUTOMOC ON)
@@ -22,7 +22,16 @@ add_library(SignalBridgePlugin SHARED
 
 target_link_libraries(SignalBridgePlugin PRIVATE Qt${QT_VERSION_MAJOR}::Widgets)
 
-target_compile_definitions(SignalBridgePlugin PRIVATE SIGNALBRIDGEPLUGIN_LIBRARY)
+target_include_directories(SignalBridgePlugin PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/OpenRGB
+    ${CMAKE_CURRENT_SOURCE_DIR}/OpenRGB/i2c_smbus
+)
+
+target_compile_definitions(SignalBridgePlugin PRIVATE
+    SIGNALBRIDGEPLUGIN_LIBRARY
+    SIGNALBRIDGEPLUGIN_VERSION="${PROJECT_VERSION}"
+    SIGNALBRIDGEPLUGIN_COMMIT=""
+)
 
 if(COMMAND qt_create_translation)
     qt_create_translation(QM_FILES ${CMAKE_SOURCE_DIR} ${TS_FILES})
