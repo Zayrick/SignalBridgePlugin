@@ -1,0 +1,259 @@
+# SignalBridge Plugin
+
+An OpenRGB plugin that brings support for SignalRGB JavaScript device plugins to OpenRGB, enabling control of RGB devices through SignalRGB's extensive script library.
+
+[![Version](https://img.shields.io/badge/version-0.1.0-blue.svg)](https://github.com/yourusername/SignalBridgePlugin)
+[![License](https://img.shields.io/badge/license-GPL--2.0--or--later-green.svg)](LICENSE)
+
+[中文文档](README.zh-CN.md) | [English](README.md)
+
+## Features
+
+- **SignalRGB Script Compatibility**: Execute SignalRGB JavaScript device plugins within OpenRGB
+- **Embedded JavaScript Runtime**: Uses QuickJS for fast, lightweight script execution
+- **Automatic Device Discovery**: Scans and matches SignalRGB scripts to connected USB HID devices
+- **Seamless Integration**: Translates between SignalRGB and OpenRGB device models
+- **Configuration Management**: Persists device-specific settings across sessions
+- **Real-time Control**: Direct USB HID communication for low-latency RGB updates
+- **Multi-threaded Architecture**: Background discovery without blocking OpenRGB UI
+
+## System Requirements
+
+### Runtime Requirements
+- **OpenRGB**: 0.7 or later (with plugin support)
+- **Operating System**: Windows 10/11 (currently tested platform)
+- **SignalRGB Scripts**: Install SignalRGB to populate `%PROGRAMDATA%/SignalRgb/Plugins/`
+
+### Build Requirements
+- **CMake**: 3.16 or later
+- **Qt**: 5.15.2 or 6.11.1
+- **Compiler**: MSVC 2019/2022 or compatible C++17 compiler
+- **Git**: For submodule dependencies
+
+## Building from Source
+
+### 1. Clone the Repository
+```bash
+git clone https://github.com/yourusername/SignalBridgePlugin.git
+cd SignalBridgePlugin
+git submodule update --init --recursive
+```
+
+### 2. Configure with CMake
+Choose a preset based on your Qt version and build type:
+
+```bash
+# Qt 6 Debug (recommended for development)
+cmake --preset qt6-debug
+
+# Qt 6 Release (recommended for production)
+cmake --preset qt6-release
+
+# Qt 5 alternatives
+cmake --preset qt5-debug
+cmake --preset qt5-release
+```
+
+### 3. Build the Plugin
+```bash
+# For Qt 6 Debug
+cmake --build build/qt6-debug --config Debug --target SignalBridgePlugin
+
+# For Qt 6 Release
+cmake --build build/qt6-release --config Release --target SignalBridgePlugin
+```
+
+**Alternative: Fast Parallel Builds with JOM**
+```bash
+# JOM is located at C:\Qt\Tools\QtCreator\bin\jom\jom.exe
+cmake -G "NMake Makefiles JOM" -B build/custom -DCMAKE_BUILD_TYPE=Release
+cd build/custom
+C:\Qt\Tools\QtCreator\bin\jom\jom.exe
+```
+
+### 4. Run Tests (Optional)
+```bash
+# Run all tests
+ctest --test-dir build/qt6-debug --output-on-failure
+
+# Or run the test executable directly
+./build/qt6-debug/Debug/SignalBridgeCoreTests.exe
+```
+
+## Installation
+
+1. **Build the plugin** following the instructions above
+2. **Locate the output DLL**: `build/qt6-release/Release/SignalBridgePlugin.dll`
+3. **Copy to OpenRGB plugins directory**:
+   ```
+   %APPDATA%/OpenRGB/plugins/SignalBridgePlugin.dll
+   ```
+4. **Restart OpenRGB**
+5. **Enable the plugin**: Settings → Plugins → Enable "Signal Bridge Plugin"
+
+## Usage
+
+### Initial Setup
+1. **Install SignalRGB** (or manually place SignalRGB scripts in `%PROGRAMDATA%/SignalRgb/Plugins/`)
+2. **Launch OpenRGB** and navigate to the **SignalBridge** tab
+3. **Click "Scan Devices"** to discover compatible devices
+
+### Device Discovery
+The plugin will:
+- Scan all `.js` files in the SignalRGB plugins directory
+- Extract device metadata (vendor ID, product ID, model name)
+- Match scripts against connected USB HID devices
+- Create OpenRGB controllers for matched devices
+
+### Device Configuration
+- Compatible devices appear in OpenRGB's main device list
+- Configure RGB settings through standard OpenRGB controls
+- Script-specific settings are available in the SignalBridge tab
+- Configurations are automatically saved and restored
+
+### Viewing Logs
+The SignalBridge tab displays real-time script execution logs, useful for debugging device issues.
+
+## Architecture
+
+### Core Components
+
+```
+SignalBridgePlugin (OpenRGB Interface)
+├── SignalBridgePluginCore (Implementation)
+│   ├── DiscoveryService (Device Discovery)
+│   │   ├── ScriptScanner (Find .js files)
+│   │   └── ScriptMetadataExtractor (Parse script metadata)
+│   ├── ControllerRegistry (Manage Controllers)
+│   │   └── SignalBridgeController (Per-device controller)
+│   │       ├── QuickJsRuntime (JavaScript execution)
+│   │       ├── EndpointSession (HID device handles)
+│   │       ├── TopologyMapper (SignalRGB → OpenRGB translation)
+│   │       └── FrameBuilder (Color frame rendering)
+│   ├── DeviceConfigStore (Configuration persistence)
+│   └── SignalBridgeWidget (UI components)
+```
+
+### Discovery Pipeline
+1. **ScriptScanner**: Finds `.js` files in SignalRGB plugin directories
+2. **ScriptMetadataExtractor**: Creates minimal QuickJS runtimes to extract metadata
+3. **DiscoveryService**: Orchestrates scanning, matches scripts to HID devices
+4. **ControllerRegistry**: Creates controllers, registers with OpenRGB
+
+### JavaScript Runtime
+- **SignalRgbRuntimeFactory**: Creates configured QuickJS runtime instances
+- **RuntimeBindings**: Provides SignalRGB API (`device.log()`, `device.read()`, `device.write()`)
+- **ModuleLoader**: Loads scripts as ES6 modules
+- Scripts export functions: `Name()`, `Initialize()`, `Render()`, `Shutdown()`
+
+### Data Flow
+```
+OpenRGB Color Update
+    ↓
+SignalBridgeController::DeviceUpdateLEDs()
+    ↓
+FrameBuilder (convert colors)
+    ↓
+Script Render() function (via QuickJS)
+    ↓
+device.write() bindings
+    ↓
+HidBackend (hidapi)
+    ↓
+USB HID Device
+```
+
+## Development
+
+### Project Structure
+```
+SignalBridgePlugin/
+├── include/SignalBridge/    # Public plugin headers
+├── src/
+│   ├── domain/              # Core types (ControlParameters, DeviceRecords)
+│   ├── runtime/             # QuickJS integration, bindings
+│   ├── scanning/            # Script discovery, metadata extraction
+│   ├── discovery/           # Device discovery orchestration
+│   ├── openrgb/             # OpenRGB integration (controllers, mapping)
+│   ├── hid/                 # HID device abstraction (hidapi wrapper)
+│   ├── config/              # Configuration persistence
+│   └── ui/                  # Qt widgets
+├── tests/                   # Unit tests
+├── third_party/             # Dependencies (hidapi, quickjs)
+├── OpenRGB/                 # OpenRGB headers (submodule)
+└── resources/               # Qt resources
+```
+
+### Code Conventions
+- **C++17** standard
+- **Qt naming conventions** for Qt types (PascalCase: `QWidget`, `QString`)
+- **Snake_case** for private members with trailing underscore (`resource_manager_`)
+- **QuickJS error handling**: Check `JS_IsException()` after every runtime call
+- **Thread safety**: Lock `mutex_` when accessing shared controller state
+- **Memory management**: `std::shared_ptr` for HidBackend, raw pointers for Qt parent-child
+
+### Running Tests
+```bash
+# All tests
+ctest --test-dir build/qt6-debug --output-on-failure
+
+# Specific test
+./build/qt6-debug/Debug/SignalBridgeCoreTests.exe
+```
+
+Tests cover:
+- HID device enumeration
+- Topology mapping (SignalRGB channels/LEDs → OpenRGB zones/LEDs)
+- Frame building and color conversion
+- Configuration persistence
+- Path normalization
+
+## Known Issues
+
+- **Windows Sandbox**: May fail with error 1312. Use managed escalation if encountered.
+- **Script Compatibility**: Not all SignalRGB scripts may work due to API differences
+- **Platform Support**: Currently tested on Windows only; Linux/macOS support is planned
+
+## Contributing
+
+Contributions are welcome! Please:
+
+1. Fork the repository
+2. Create a feature branch (`git checkout -b feature/amazing-feature`)
+3. Commit your changes (`git commit -m 'Add amazing feature'`)
+4. Push to the branch (`git push origin feature/amazing-feature`)
+5. Open a Pull Request
+
+### Development Guidelines
+- Follow existing code conventions
+- Add tests for new functionality
+- Update documentation as needed
+- Ensure builds pass on both Qt5 and Qt6
+
+## License
+
+This project is licensed under the GNU General Public License v2.0. See [LICENSE](LICENSE) for details.
+
+## Acknowledgments
+
+- **OpenRGB**: For the excellent RGB control platform and plugin API
+- **SignalRGB**: For the comprehensive device script library
+- **QuickJS**: For the lightweight JavaScript engine
+- **hidapi**: For cross-platform HID device access
+
+## References
+
+- [OpenRGB](https://openrgb.org/)
+- [SignalRGB](https://signalrgb.com/)
+- [QuickJS](https://bellard.org/quickjs/)
+- [hidapi](https://github.com/libusb/hidapi)
+
+## Support
+
+For issues, questions, or suggestions:
+- Open an issue on [GitHub](https://github.com/yourusername/SignalBridgePlugin/issues)
+- Check existing documentation in [AGENTS.md](AGENTS.md)
+
+---
+
+**Note**: This plugin is an independent project and is not officially affiliated with OpenRGB or SignalRGB.
