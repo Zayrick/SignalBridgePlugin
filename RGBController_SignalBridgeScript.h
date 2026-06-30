@@ -7,6 +7,8 @@
 #include <string>
 #include <vector>
 
+#include <QString>
+
 #include "RGBController/RGBController.h"
 #include "SignalBridgeScriptRuntime.h"
 
@@ -16,7 +18,9 @@ public:
     RGBController_SignalBridgeScript(
         std::shared_ptr<SignalBridgeHidBackend> hid_backend,
         SignalBridgeScriptMeta meta,
-        SignalBridgeHidInfo primary_hid);
+        SignalBridgeHidInfo primary_hid,
+        QJsonObject configuration = QJsonObject(),
+        std::string config_key = {});
     ~RGBController_SignalBridgeScript() override;
 
     void SetupZones() override;
@@ -30,6 +34,10 @@ public:
     void DeviceUpdateMode() override;
 
     const std::string& SourcePath() const;
+    const std::string& ConfigKey() const;
+    const SignalBridgeScriptMeta& ScriptMeta() const;
+    void SetConfiguration(QJsonObject configuration);
+    void SetConfigurationValue(const QString& property, const QJsonValue& value);
 
 private:
     struct ZoneTarget
@@ -65,6 +73,8 @@ private:
     std::shared_ptr<SignalBridgeHidBackend> hid_backend_;
     SignalBridgeScriptMeta meta_;
     SignalBridgeHidInfo primary_hid_;
+    QJsonObject configuration_;
+    std::string config_key_;
     SignalBridgeHidBackend::Handle primary_handle_ = 0;
     std::map<std::string, SignalBridgeHidBackend::Handle> endpoint_handles_;
     std::vector<SignalBridgeEndpointDescriptor> endpoints_;

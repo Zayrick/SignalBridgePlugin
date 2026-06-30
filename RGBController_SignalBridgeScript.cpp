@@ -7,6 +7,7 @@
 
 #include <QJsonArray>
 #include <QJsonObject>
+#include <QJsonValue>
 
 namespace
 {
@@ -74,6 +75,56 @@ std::vector<std::string> ExtractNames(const QJsonValue& value)
     return names;
 }
 
+std::vector<QJsonObject> ExtractControlParameters(const QJsonValue& value)
+{
+    std::vector<QJsonObject> result;
+    for(const QJsonValue& item : value.toArray())
+    {
+        if(!item.isObject())
+        {
+            continue;
+        }
+
+        QJsonObject parameter = item.toObject();
+        const QString property = parameter.value("property").toString().trimmed();
+        if(property.isEmpty())
+        {
+            continue;
+        }
+
+        parameter.insert("property", property);
+        if(parameter.value("label").toString().isEmpty())
+        {
+            parameter.insert("label", property);
+        }
+        if(parameter.value("type").toString().isEmpty())
+        {
+            parameter.insert("type", "text");
+        }
+        result.push_back(parameter);
+    }
+    return result;
+}
+
+void MergeControlParameters(std::vector<QJsonObject>& target, const QJsonValue& value)
+{
+    for(const QJsonObject& parameter : ExtractControlParameters(value))
+    {
+        const QString property = parameter.value("property").toString();
+        const auto existing = std::find_if(target.begin(), target.end(), [&property](const QJsonObject& item) {
+            return item.value("property").toString() == property;
+        });
+        if(existing == target.end())
+        {
+            target.push_back(parameter);
+        }
+        else
+        {
+            *existing = parameter;
+        }
+    }
+}
+
 std::vector<int> BuildMatrixMap(
     unsigned int width,
     unsigned int height,
@@ -139,11 +190,20 @@ QJsonArray ByteArrayToJson(const std::vector<unsigned char>& bytes)
 RGBController_SignalBridgeScript::RGBController_SignalBridgeScript(
     std::shared_ptr<SignalBridgeHidBackend> hid_backend,
     SignalBridgeScriptMeta meta,
-    SignalBridgeHidInfo primary_hid)
+    SignalBridgeHidInfo primary_hid,
+    QJsonObject configuration,
+    std::string config_key)
     : hid_backend_(std::move(hid_backend))
     , meta_(std::move(meta))
     , primary_hid_(std::move(primary_hid))
+    , configuration_(std::move(configuration))
+    , config_key_(std::move(config_key))
 {
+    if(config_key_.empty())
+    {
+        config_key_ = meta_.lookup_path.empty() ? meta_.source_path : meta_.lookup_path;
+    }
+
     name = meta_.name;
     vendor = meta_.publisher.empty() ? FirstWord(meta_.name) : meta_.publisher;
     description = "SignalRGB script device";
@@ -284,6 +344,36 @@ const std::string& RGBController_SignalBridgeScript::SourcePath() const
     return meta_.source_path;
 }
 
+const std::string& RGBController_SignalBridgeScript::ConfigKey() const
+{
+    return config_key_;
+}
+
+const SignalBridgeScriptMeta& RGBController_SignalBridgeScript::ScriptMeta() const
+{
+    return meta_;
+}
+
+void RGBController_SignalBridgeScript::SetConfiguration(QJsonObject configuration)
+{
+    std::lock_guard<std::mutex> lock(mutex_);
+    configuration_ = std::move(configuration);
+    if(runtime_ != nullptr)
+    {
+        runtime_->ApplyConfiguration(meta_, configuration_);
+    }
+}
+
+void RGBController_SignalBridgeScript::SetConfigurationValue(const QString& property, const QJsonValue& value)
+{
+    std::lock_guard<std::mutex> lock(mutex_);
+    configuration_.insert(property, value);
+    if(runtime_ != nullptr)
+    {
+        runtime_->ApplyConfiguration(meta_, configuration_);
+    }
+}
+
 void RGBController_SignalBridgeScript::OpenEndpoints()
 {
     primary_handle_ = hid_backend_->OpenPath(primary_hid_.path);
@@ -322,7 +412,8 @@ void RGBController_SignalBridgeScript::CreateRuntime()
         primary_handle_,
         primary_hid_,
         endpoint_handles_,
-        endpoints_));
+        endpoints_,
+        configuration_));
 }
 
 void RGBController_SignalBridgeScript::InitializeScript()
@@ -330,6 +421,15 @@ void RGBController_SignalBridgeScript::InitializeScript()
     if(runtime_->HasGlobal("Initialize"))
     {
         runtime_->CallGlobalJson("Initialize");
+    }
+
+    try
+    {
+        MergeControlParameters(meta_.control_parameters, runtime_->CallGlobalJson("__srgb_export_properties"));
+        runtime_->ApplyConfiguration(meta_, configuration_);
+    }
+    catch(...)
+    {
     }
 
     QJsonArray args;

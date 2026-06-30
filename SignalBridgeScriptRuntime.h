@@ -39,6 +39,7 @@ struct SignalBridgeScriptMeta
     std::string image_url;
     std::vector<std::string> led_names;
     std::vector<std::pair<int, int>> led_positions;
+    std::vector<QJsonObject> control_parameters;
     bool has_validate = false;
     std::string js_source;
 };
@@ -72,12 +73,15 @@ public:
         SignalBridgeHidBackend::Handle primary_handle,
         const SignalBridgeHidInfo& primary_hid,
         std::map<std::string, SignalBridgeHidBackend::Handle> endpoint_handles,
-        std::vector<SignalBridgeEndpointDescriptor> endpoints);
+        std::vector<SignalBridgeEndpointDescriptor> endpoints,
+        QJsonObject configuration = QJsonObject());
 
     void Eval(const std::string& source, const std::string& name);
     bool HasGlobal(const std::string& name) const;
     QJsonValue CallGlobalJson(const std::string& name, const QJsonArray& args = QJsonArray());
     void SetGlobalJson(const std::string& name, const QJsonValue& value);
+    void ApplyConfigurationValues(const QJsonObject& configuration);
+    void ApplyConfiguration(const SignalBridgeScriptMeta& meta, const QJsonObject& configuration);
 
 private:
     explicit SignalBridgeJsRuntime(bool create_context);

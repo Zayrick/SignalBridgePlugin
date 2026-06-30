@@ -82,6 +82,124 @@ QJsonValue JsonValueFromString(const char* value)
     return QJsonValue(QString::fromUtf8(value));
 }
 
+bool JsonBool(const QJsonValue& value, bool fallback)
+{
+    if(value.isBool())
+    {
+        return value.toBool();
+    }
+    if(value.isString())
+    {
+        const QString text = value.toString().trimmed().toLower();
+        if(text == "true" || text == "1" || text == "yes" || text == "on")
+        {
+            return true;
+        }
+        if(text == "false" || text == "0" || text == "no" || text == "off")
+        {
+            return false;
+        }
+    }
+    return fallback;
+}
+
+double JsonNumber(const QJsonValue& value, double fallback)
+{
+    if(value.isDouble())
+    {
+        return value.toDouble();
+    }
+    if(value.isString())
+    {
+        bool ok = false;
+        const double parsed = value.toString().trimmed().toDouble(&ok);
+        if(ok)
+        {
+            return parsed;
+        }
+    }
+    return fallback;
+}
+
+QString JsonText(const QJsonValue& value, const QString& fallback = QString())
+{
+    if(value.isString())
+    {
+        return value.toString();
+    }
+    if(value.isBool())
+    {
+        return value.toBool() ? QStringLiteral("true") : QStringLiteral("false");
+    }
+    if(value.isDouble())
+    {
+        return QString::number(value.toDouble());
+    }
+    return fallback;
+}
+
+QJsonValue DefaultParameterValue(const QJsonObject& parameter)
+{
+    const QString type = parameter.value("type").toString().toLower();
+    const QJsonValue fallback = parameter.value("default");
+
+    if(type == "boolean" || type == "checkbox")
+    {
+        return JsonBool(fallback, false);
+    }
+    if(type == "number")
+    {
+        return JsonNumber(fallback, 0.0);
+    }
+    if(type == "combobox" || type == "select")
+    {
+        const QJsonArray values = parameter.value("values").toArray();
+        if(fallback.isString())
+        {
+            return fallback.toString();
+        }
+        return values.isEmpty() ? QString() : JsonText(values.first());
+    }
+    return JsonText(fallback);
+}
+
+QJsonValue NormalizeParameterValue(const QJsonObject& parameter, const QJsonValue& value)
+{
+    const QString type = parameter.value("type").toString().toLower();
+    const QJsonValue fallback = DefaultParameterValue(parameter);
+
+    if(value.isUndefined() || value.isNull())
+    {
+        return fallback;
+    }
+    if(type == "boolean" || type == "checkbox")
+    {
+        return JsonBool(value, fallback.toBool(false));
+    }
+    if(type == "number")
+    {
+        return JsonNumber(value, fallback.toDouble(0.0));
+    }
+    if(type == "combobox" || type == "select")
+    {
+        const QString text = JsonText(value, fallback.toString());
+        const QJsonArray values = parameter.value("values").toArray();
+        if(values.isEmpty())
+        {
+            return text;
+        }
+        for(const QJsonValue& candidate : values)
+        {
+            if(JsonText(candidate) == text)
+            {
+                return text;
+            }
+        }
+        return fallback;
+    }
+    return JsonText(value, fallback.toString());
+}
+
 JSValue JsonToJsValue(JSContext* context, const QJsonValue& value, const std::string& name)
 {
     const std::string json = JsonValueToString(value);
@@ -536,7 +654,8 @@ SignalBridgeJsRuntime SignalBridgeJsRuntime::CreateRuntime(
     SignalBridgeHidBackend::Handle primary_handle,
     const SignalBridgeHidInfo& primary_hid,
     std::map<std::string, SignalBridgeHidBackend::Handle> endpoint_handles,
-    std::vector<SignalBridgeEndpointDescriptor> endpoints)
+    std::vector<SignalBridgeEndpointDescriptor> endpoints,
+    QJsonObject configuration)
 {
     SignalBridgeJsRuntime runtime;
     runtime.callback_state_ = std::make_unique<SignalBridgeJsCallbackState>();
@@ -555,6 +674,8 @@ SignalBridgeJsRuntime SignalBridgeJsRuntime::CreateRuntime(
     runtime.ApplyStaticMetadata(meta);
     runtime.Eval(meta.js_source, meta.source_path);
     runtime.Eval(kSetupParamsJs, "<setup-params>");
+    runtime.ApplyConfigurationValues(configuration);
+    runtime.ApplyConfiguration(meta, configuration);
     return runtime;
 }
 
@@ -656,6 +777,29 @@ void SignalBridgeJsRuntime::SetGlobalJson(const std::string& name, const QJsonVa
         throw std::runtime_error(error);
     }
     JS_FreeValue(context_, global);
+}
+
+void SignalBridgeJsRuntime::ApplyConfigurationValues(const QJsonObject& configuration)
+{
+    for(auto it = configuration.begin(); it != configuration.end(); ++it)
+    {
+        SetGlobalJson(it.key().toStdString(), it.value());
+    }
+}
+
+void SignalBridgeJsRuntime::ApplyConfiguration(const SignalBridgeScriptMeta& meta, const QJsonObject& configuration)
+{
+    for(const QJsonObject& parameter : meta.control_parameters)
+    {
+        const QString property = parameter.value("property").toString();
+        if(property.isEmpty())
+        {
+            continue;
+        }
+
+        const QJsonValue configured = configuration.value(property);
+        SetGlobalJson(property.toStdString(), NormalizeParameterValue(parameter, configured));
+    }
 }
 
 void SignalBridgeJsRuntime::Reset()

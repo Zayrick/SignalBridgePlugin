@@ -14,6 +14,7 @@ shutdownMode:readonly
 shutdownColor:readonly
 LightingMode:readonly
 forcedColor:readonly
+rgbOrder:readonly
 */
 export function ControllableParameters() {
     return [
@@ -21,6 +22,7 @@ export function ControllableParameters() {
         { "property": "shutdownColor", "group": "lighting", "label": "Shutdown Color", "min": "0", "max": "360", "type": "color", "default": "#000000" },
         { "property": "LightingMode", "group": "lighting", "label": "Lighting Mode", "type": "combobox", "values": ["Canvas", "Forced"], "default": "Canvas" },
         { "property": "forcedColor", "group": "lighting", "label": "Forced Color", "min": "0", "max": "360", "type": "color", "default": "#009bde" },
+        { "property": "rgbOrder", "group": "lighting", "label": "RGB Order", "type": "combobox", "values": ["RGB", "RBG", "GRB", "GBR", "BRG", "BGR"], "default": "RGB" },
     ];
 }
 
@@ -173,9 +175,7 @@ function createSolidColorArray(color) {
         }
 
         const offset = ledIdx * 3;
-        rgbdata[offset] = color[0];
-        rgbdata[offset + 1] = color[1];
-        rgbdata[offset + 2] = color[2];
+        writeOrderedColor(rgbdata, offset, color);
     }
 
     return rgbdata;
@@ -202,9 +202,7 @@ function grabColors(overrideColor) {
         const y = vKeyPositions[iIdx][1];
         const color = device.color(x, y);
         const offset = ledIdx * 3;
-        rgbdata[offset] = color[0];
-        rgbdata[offset + 1] = color[1];
-        rgbdata[offset + 2] = color[2];
+        writeOrderedColor(rgbdata, offset, color);
     }
 
     return rgbdata;
@@ -345,6 +343,23 @@ function clampByte(value) {
         return 255;
     }
     return number & 0xFF;
+}
+
+function writeOrderedColor(rgbdata, offset, color) {
+    const ordered = applyRgbOrder(color);
+    rgbdata[offset] = ordered[0];
+    rgbdata[offset + 1] = ordered[1];
+    rgbdata[offset + 2] = ordered[2];
+}
+
+function applyRgbOrder(color) {
+    const order = /^(RGB|RBG|GRB|GBR|BRG|BGR)$/.test(rgbOrder || "") ? rgbOrder : "RGB";
+    const channels = { R: color[0], G: color[1], B: color[2] };
+    return [
+        clampByte(channels[order[0]]),
+        clampByte(channels[order[1]]),
+        clampByte(channels[order[2]]),
+    ];
 }
 
 function hexToRgbLocal(hex) {

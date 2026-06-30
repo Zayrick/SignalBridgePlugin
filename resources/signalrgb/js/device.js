@@ -147,6 +147,55 @@ var device = (function() {
         return /^(RGB|RBG|GRB|GBR|BRG|BGR)$/.test(order) ? order : "RGB";
     }
 
+    function textValue(value, fallback) {
+        if (value === undefined || value === null) return fallback || "";
+        return String(value);
+    }
+
+    function boolValue(value, fallback) {
+        if (typeof value === "boolean") return value;
+        if (typeof value === "string") {
+            var text = value.trim().toLowerCase();
+            if (text === "true" || text === "1" || text === "yes" || text === "on") return true;
+            if (text === "false" || text === "0" || text === "no" || text === "off") return false;
+        }
+        return !!fallback;
+    }
+
+    function numberValue(value, fallback) {
+        var num = Number(value);
+        return isFinite(num) ? num : fallback;
+    }
+
+    function defaultPropertyValue(prop) {
+        var type = String(prop.type || "").toLowerCase();
+        var def = prop["default"];
+        if (type === "boolean" || type === "checkbox") return boolValue(def, false);
+        if (type === "number") return numberValue(def, 0);
+        if (type === "combobox" || type === "select") {
+            if (def !== undefined && def !== null) return String(def);
+            return Array.isArray(prop.values) && prop.values.length > 0 ? textValue(prop.values[0], "") : "";
+        }
+        return textValue(def, "");
+    }
+
+    function normalizePropertyValue(prop, value) {
+        var type = String(prop.type || "").toLowerCase();
+        var fallback = defaultPropertyValue(prop);
+        if (value === undefined || value === null) return fallback;
+        if (type === "boolean" || type === "checkbox") return boolValue(value, fallback);
+        if (type === "number") return numberValue(value, fallback);
+        if (type === "combobox" || type === "select") {
+            var text = textValue(value, fallback);
+            if (!Array.isArray(prop.values) || prop.values.length === 0) return text;
+            for (var i = 0; i < prop.values.length; i++) {
+                if (textValue(prop.values[i], "") === text) return text;
+            }
+            return fallback;
+        }
+        return textValue(value, fallback);
+    }
+
     var _orderMap = {
         RGB: [0, 1, 2], RBG: [0, 2, 1], GRB: [1, 0, 2],
         GBR: [1, 2, 0], BRG: [2, 0, 1], BGR: [2, 1, 0],
@@ -576,18 +625,13 @@ var device = (function() {
 
         addProperty: function(prop) {
             if (!prop || !prop.property) return;
+            prop.property = String(prop.property).trim();
+            if (!prop.property) return;
+            if (!prop.label) prop.label = prop.property;
+            if (!prop.type) prop.type = "text";
             dev.__props[prop.property] = prop;
             var g = (typeof globalThis !== "undefined") ? globalThis : this;
-            if (typeof g[prop.property] === "undefined") {
-                var def = prop["default"];
-                if (prop.type === "boolean") {
-                    g[prop.property] = (def === "true" || def === true);
-                } else if (prop.type === "number") {
-                    g[prop.property] = Number(def) || 0;
-                } else {
-                    g[prop.property] = (def != null) ? String(def) : "";
-                }
-            }
+            g[prop.property] = normalizePropertyValue(prop, g[prop.property]);
         },
 
         getProperty: function(name) {
@@ -861,6 +905,16 @@ var device = (function() {
         createTemperatureSensor: function() {},
         removeTemperatureSensor: function() {},
         getImageBuffer: function() { return []; },
+
+        __exportProperties: function() {
+            var props = [];
+            for (var key in dev.__props) {
+                if (Object.prototype.hasOwnProperty.call(dev.__props, key)) {
+                    props.push(dev.__props[key]);
+                }
+            }
+            return props;
+        },
     };
 
     return dev;
@@ -877,6 +931,10 @@ function __srgb_is_topology_dirty() {
 function __srgb_take_topology_update(force) {
     var topology = device.__takeTopologyUpdate(!!force);
     return topology || false;
+}
+
+function __srgb_export_properties() {
+    return device.__exportProperties();
 }
 
 function __srgb_apply_pending_frames() {

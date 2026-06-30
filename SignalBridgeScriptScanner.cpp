@@ -446,6 +446,57 @@ std::vector<std::pair<int, int>> ExtractPositions(const QJsonValue& value)
     return result;
 }
 
+std::vector<QJsonObject> ExtractControlParameters(const QJsonValue& value)
+{
+    std::vector<QJsonObject> result;
+    for(const QJsonValue& item : value.toArray())
+    {
+        if(!item.isObject())
+        {
+            continue;
+        }
+
+        QJsonObject parameter = item.toObject();
+        const QString property = parameter.value("property").toString().trimmed();
+        if(property.isEmpty())
+        {
+            continue;
+        }
+
+        parameter.insert("property", property);
+        if(parameter.value("label").toString().isEmpty())
+        {
+            parameter.insert("label", property);
+        }
+        if(parameter.value("type").toString().isEmpty())
+        {
+            parameter.insert("type", "text");
+        }
+
+        result.push_back(parameter);
+    }
+    return result;
+}
+
+void MergeControlParameters(std::vector<QJsonObject>& target, const QJsonValue& value)
+{
+    for(const QJsonObject& parameter : ExtractControlParameters(value))
+    {
+        const QString property = parameter.value("property").toString();
+        const auto existing = std::find_if(target.begin(), target.end(), [&property](const QJsonObject& item) {
+            return item.value("property").toString() == property;
+        });
+        if(existing == target.end())
+        {
+            target.push_back(parameter);
+        }
+        else
+        {
+            *existing = parameter;
+        }
+    }
+}
+
 unsigned int JsonUInt(const QJsonValue& value, unsigned int fallback)
 {
     if(!value.isDouble())
@@ -551,6 +602,17 @@ SignalBridgeScriptMeta SignalBridgeScriptScanner::ScanScript(
     meta.led_names = ExtractStringArray(runtime.CallGlobalJson("LedNames"));
     meta.led_positions = ExtractPositions(runtime.CallGlobalJson("LedPositions"));
     meta.has_validate = runtime.HasGlobal("Validate");
+    try
+    {
+        if(runtime.HasGlobal("ControllableParameters"))
+        {
+            MergeControlParameters(meta.control_parameters, runtime.CallGlobalJson("ControllableParameters"));
+        }
+        MergeControlParameters(meta.control_parameters, runtime.CallGlobalJson("__srgb_export_properties"));
+    }
+    catch(...)
+    {
+    }
 
     return meta;
 }
