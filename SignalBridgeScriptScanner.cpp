@@ -182,7 +182,8 @@ unsigned int JsonUInt(const QJsonValue& value, unsigned int fallback)
 
 SignalBridgeScanReport SignalBridgeScriptScanner::ScanDirectory(
     const std::string& script_directory,
-    SignalBridgeScanProgressCallback progress_callback) const
+    SignalBridgeScanProgressCallback progress_callback,
+    SignalBridgeScriptLogCallback log_callback) const
 {
     SignalBridgeScanReport report;
     const QDir root(QString::fromStdString(script_directory));
@@ -218,7 +219,7 @@ SignalBridgeScanReport SignalBridgeScriptScanner::ScanDirectory(
     {
         try
         {
-            std::optional<SignalBridgeScriptMeta> meta = ScanScript(source, sources);
+            std::optional<SignalBridgeScriptMeta> meta = ScanScript(source, sources, log_callback);
             if(meta.has_value())
             {
                 report.scripts.push_back(std::move(*meta));
@@ -241,9 +242,10 @@ SignalBridgeScanReport SignalBridgeScriptScanner::ScanDirectory(
 
 std::optional<SignalBridgeScriptMeta> SignalBridgeScriptScanner::ScanScript(
     const SignalBridgeScriptSource& script,
-    const std::vector<SignalBridgeScriptSource>& catalog) const
+    const std::vector<SignalBridgeScriptSource>& catalog,
+    const SignalBridgeScriptLogCallback& log_callback) const
 {
-    SignalBridgeJsRuntime runtime = SignalBridgeJsRuntime::CreateScan();
+    SignalBridgeJsRuntime runtime = SignalBridgeJsRuntime::CreateScan(log_callback, script.lookup_path);
     runtime.LoadModule(script.lookup_path, catalog);
     runtime.EvaluateModule();
     if(!runtime.HasModuleExport("Name"))

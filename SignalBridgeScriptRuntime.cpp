@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <chrono>
 #include <cctype>
+#include <cstdio>
 #include <set>
 #include <sstream>
 #include <stdexcept>
@@ -562,6 +563,7 @@ struct SignalBridgeJsCallbackState
     std::vector<SignalBridgeEndpointDescriptor> endpoints;
     std::size_t last_read_size = 0;
     std::string script_name;
+    SignalBridgeScriptLogCallback log_callback;
 };
 
 struct SignalBridgeModuleLoaderState
@@ -872,7 +874,16 @@ JSValue LogJs(JSContext* context, JSValueConst, int argc, JSValueConst* argv)
         const char* str = JS_ToCString(context, argv[0]);
         if(str != nullptr)
         {
-            fprintf(stderr, "[SignalBridge] %s\n", str);
+            SignalBridgeJsCallbackState* state = CallbackState(context);
+            const std::string source = state != nullptr && !state->script_name.empty()
+                                           ? state->script_name
+                                           : std::string("script");
+            const std::string message = str;
+            fprintf(stderr, "[SignalBridge][%s] %s\n", source.c_str(), message.c_str());
+            if(state != nullptr && state->log_callback)
+            {
+                state->log_callback(source, message);
+            }
             JS_FreeCString(context, str);
         }
     }
@@ -963,17 +974,28 @@ SignalBridgeJsRuntime& SignalBridgeJsRuntime::operator=(SignalBridgeJsRuntime&& 
     return *this;
 }
 
-SignalBridgeJsRuntime SignalBridgeJsRuntime::CreateScan()
+SignalBridgeJsRuntime SignalBridgeJsRuntime::CreateScan(
+    SignalBridgeScriptLogCallback log_callback,
+    std::string log_source)
 {
     SignalBridgeJsRuntime runtime;
+    runtime.callback_state_ = std::make_unique<SignalBridgeJsCallbackState>();
+    runtime.callback_state_->script_name = log_source.empty() ? std::string("scanner") : std::move(log_source);
+    runtime.callback_state_->log_callback = std::move(log_callback);
+    JS_SetContextOpaque(runtime.context_, runtime.callback_state_.get());
+    runtime.RegisterCallbacks();
     runtime.Eval(SignalBridgeLoadReferenceTextFile("js/scan_stubs.js"), "<scan-stubs>");
     runtime.Eval(SignalBridgeLoadReferenceTextFile("js/device.js"), "<scan-device>");
     return runtime;
 }
 
-SignalBridgeJsRuntime SignalBridgeJsRuntime::CreateValidation(const SignalBridgeScriptMeta& meta)
+SignalBridgeJsRuntime SignalBridgeJsRuntime::CreateValidation(
+    const SignalBridgeScriptMeta& meta,
+    SignalBridgeScriptLogCallback log_callback)
 {
-    SignalBridgeJsRuntime runtime = CreateScan();
+    SignalBridgeJsRuntime runtime = CreateScan(
+        std::move(log_callback),
+        meta.name.empty() ? meta.lookup_path : meta.name);
     runtime.LoadModule(meta.lookup_path, meta.module_sources);
     runtime.EvaluateModule();
     runtime.ApplyConfiguration(meta, QJsonObject());
@@ -987,7 +1009,8 @@ SignalBridgeJsRuntime SignalBridgeJsRuntime::CreateRuntime(
     const SignalBridgeHidInfo& primary_hid,
     std::map<std::string, SignalBridgeHidBackend::Handle> endpoint_handles,
     std::vector<SignalBridgeEndpointDescriptor> endpoints,
-    QJsonObject configuration)
+    QJsonObject configuration,
+    SignalBridgeScriptLogCallback log_callback)
 {
     SignalBridgeJsRuntime runtime;
     runtime.callback_state_ = std::make_unique<SignalBridgeJsCallbackState>();
@@ -996,6 +1019,7 @@ SignalBridgeJsRuntime SignalBridgeJsRuntime::CreateRuntime(
     runtime.callback_state_->endpoint_handles = std::move(endpoint_handles);
     runtime.callback_state_->endpoints = std::move(endpoints);
     runtime.callback_state_->script_name = meta.name;
+    runtime.callback_state_->log_callback = std::move(log_callback);
     JS_SetContextOpaque(runtime.context_, runtime.callback_state_.get());
     runtime.RegisterCallbacks();
     runtime.Eval(SignalBridgeLoadReferenceTextFile("js/polyfills.js"), "<polyfills>");

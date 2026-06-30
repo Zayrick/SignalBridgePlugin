@@ -20,7 +20,8 @@ public:
         SignalBridgeScriptMeta meta,
         SignalBridgeHidInfo primary_hid,
         QJsonObject configuration = QJsonObject(),
-        std::string config_key = {});
+        std::string config_key = {},
+        SignalBridgeScriptLogCallback log_callback = {});
     ~RGBController_SignalBridgeScript() override;
 
     void SetupZones() override;
@@ -76,6 +77,7 @@ private:
     SignalBridgeHidInfo primary_hid_;
     QJsonObject configuration_;
     std::string config_key_;
+    SignalBridgeScriptLogCallback log_callback_;
     SignalBridgeHidBackend::Handle primary_handle_ = 0;
     std::map<std::string, SignalBridgeHidBackend::Handle> endpoint_handles_;
     std::vector<SignalBridgeEndpointDescriptor> endpoints_;

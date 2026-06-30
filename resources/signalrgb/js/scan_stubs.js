@@ -4,12 +4,30 @@
 // same device model instead of maintaining two divergent copies.
 // ─────────────────────────────────────────────────────────────────
 
-var console = {
-    log: function() {},
-    info: function() {},
-    warn: function() {},
-    error: function() {},
-};
+var console = (function() {
+    function fmt() {
+        var a = [];
+        for (var i = 0; i < arguments.length; i++) {
+            a.push(typeof arguments[i] === "string"
+                ? arguments[i]
+                : JSON.stringify(arguments[i]));
+        }
+        return a.join(" ");
+    }
+
+    function write(prefix, args) {
+        if (typeof _log === "function") {
+            _log(prefix + fmt.apply(null, args));
+        }
+    }
+
+    return {
+        log:   function() { write("", arguments); },
+        info:  function() { write("", arguments); },
+        warn:  function() { write("[WARN] ", arguments); },
+        error: function() { write("[ERROR] ", arguments); },
+    };
+})();
 
 function hexToRgb(hex) {
     if (typeof hex !== "string") return [0, 0, 0];

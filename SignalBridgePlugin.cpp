@@ -8,6 +8,7 @@
 #include <QAbstractItemView>
 #include <QCheckBox>
 #include <QComboBox>
+#include <QDateTime>
 #include <QDir>
 #include <QDoubleSpinBox>
 #include <QFile>
@@ -26,6 +27,7 @@
 #include <QProgressBar>
 #include <QPushButton>
 #include <QScrollArea>
+#include <QScrollBar>
 #include <QSignalBlocker>
 #include <QSizePolicy>
 #include <QStringList>
@@ -46,6 +48,7 @@ constexpr int ScriptTableColumnCount = 5;
 constexpr int OpenRgbTabLabelWidth = 222;
 constexpr int OpenRgbTabLabelLeftPadding = 10;
 constexpr int OpenRgbTabLabelNameWidth = OpenRgbTabLabelWidth - OpenRgbTabLabelLeftPadding;
+constexpr int MaxFrontendLogLines = 2000;
 
 QWidget* CreateOpenRgbStyleTabLabel(const QString& text, QWidget* parent)
 {
@@ -79,6 +82,17 @@ int AddOpenRgbStyleDeviceTab(QTabWidget* tab_widget, QWidget* page, const QStrin
 QString FormatHex16(std::uint16_t value)
 {
     return QString("0x%1").arg(value, 4, 16, QLatin1Char('0'));
+}
+
+QString FormatScriptLogLine(const QString& stage, const std::string& source, const std::string& message)
+{
+    const QString source_text = QString::fromStdString(source).trimmed();
+    const QString message_text = QString::fromStdString(message);
+    if(source_text.isEmpty())
+    {
+        return QString("[%1] %2").arg(stage, message_text);
+    }
+    return QString("[%1] [%2] %3").arg(stage, source_text, message_text);
 }
 
 QStringList FormatScriptTable(const std::vector<SignalBridgeScriptMeta>& scripts)
@@ -355,6 +369,11 @@ SignalBridgePlugin::SignalBridgePlugin(QObject* parent)
             this,
             &SignalBridgePlugin::ApplyDiscoveryStatus,
             Qt::QueuedConnection);
+    connect(this,
+            &SignalBridgePlugin::ScriptLogReceived,
+            this,
+            &SignalBridgePlugin::AppendLogLine,
+            Qt::QueuedConnection);
 }
 
 SignalBridgePlugin::~SignalBridgePlugin()
@@ -386,7 +405,7 @@ void SignalBridgePlugin::Load(ResourceManagerInterface* resource_manager_ptr)
 {
     resource_manager = resource_manager_ptr;
     status_message = "SignalRGB discovery queued";
-    details_message.clear();
+    ClearLogOutput();
     script_table_items.clear();
     LoadDeviceConfigStore();
     DiscoverSignalRgbDevices();
@@ -411,7 +430,7 @@ void SignalBridgePlugin::Unload()
     resource_manager = nullptr;
     status_message = "Plugin unloaded";
     discovery_progress = 0;
-    details_message.clear();
+    ClearLogOutput();
     script_table_items.clear();
     device_records = QJsonArray();
     selected_device_key.clear();
@@ -419,10 +438,6 @@ void SignalBridgePlugin::Unload()
     if(status_label != nullptr)
     {
         status_label->setText(QString::fromStdString(status_message));
-    }
-    if(details_text != nullptr)
-    {
-        details_text->clear();
     }
     SetScriptTable(script_table_items, false);
     SetDeviceList(QStringLiteral("[]"), false);
@@ -558,6 +573,7 @@ void SignalBridgePlugin::DiscoverSignalRgbDevices()
     discovery_cancel_requested.store(false);
     const int generation = discovery_generation.fetch_add(1) + 1;
     discovery_running.store(true);
+    ClearLogOutput();
     ApplyDiscoveryStatus(generation, "Scanning SignalRGB scripts...", "", QStringList(), QStringLiteral("[]"), true, 0);
 
     discovery_thread = std::thread(&SignalBridgePlugin::DiscoveryWorker, this, generation, resource_manager);
@@ -588,6 +604,14 @@ void SignalBridgePlugin::DiscoveryWorker(int generation, ResourceManagerInterfac
         filesystem::create_directories(script_path);
         const std::string script_dir = script_path.generic_u8string();
         int last_scan_progress = -1;
+        SignalBridgeScriptLogCallback scan_log_callback =
+            [this, generation](const std::string& source, const std::string& message) {
+                if(IsDiscoveryStale(generation))
+                {
+                    return;
+                }
+                emit this->ScriptLogReceived(FormatScriptLogLine("Scan", source, message));
+            };
         const SignalBridgeScanReport report = SignalBridgeScriptScanner().ScanDirectory(
             script_dir,
             [this, generation, &last_scan_progress](std::size_t completed, std::size_t total, const std::string&) {
@@ -615,7 +639,8 @@ void SignalBridgePlugin::DiscoveryWorker(int generation, ResourceManagerInterfac
                     QString(),
                     true,
                     progress);
-            });
+            },
+            scan_log_callback);
         if(IsDiscoveryStale(generation))
         {
             discovery_running.store(false);
@@ -648,6 +673,14 @@ void SignalBridgePlugin::DiscoveryWorker(int generation, ResourceManagerInterfac
         detail_lines << "";
 
         int last_register_progress = 80;
+        SignalBridgeScriptLogCallback runtime_log_callback =
+            [this, generation](const std::string& source, const std::string& message) {
+                if(IsDiscoveryStale(generation))
+                {
+                    return;
+                }
+                emit this->ScriptLogReceived(FormatScriptLogLine("Runtime", source, message));
+            };
         for(std::size_t meta_index = 0; meta_index < report.scripts.size(); meta_index++)
         {
             const SignalBridgeScriptMeta& meta = report.scripts[meta_index];
@@ -699,7 +732,7 @@ void SignalBridgePlugin::DiscoveryWorker(int generation, ResourceManagerInterfac
                     {
                         continue;
                     }
-                    if(!ValidateScriptEndpoint(meta, hid))
+                    if(!ValidateScriptEndpoint(meta, hid, generation))
                     {
                         continue;
                     }
@@ -712,7 +745,8 @@ void SignalBridgePlugin::DiscoveryWorker(int generation, ResourceManagerInterfac
                             meta,
                             hid,
                             ConfigurationForDevice(config_key, meta),
-                            config_key.toStdString());
+                            config_key.toStdString(),
+                            runtime_log_callback);
                         manager->RegisterRGBController(controller);
                         {
                             std::lock_guard<std::mutex> lock(controller_mutex);
@@ -816,7 +850,10 @@ void SignalBridgePlugin::RemoveControllers(ResourceManagerInterface* manager)
     controllers.clear();
 }
 
-bool SignalBridgePlugin::ValidateScriptEndpoint(const SignalBridgeScriptMeta& meta, const SignalBridgeHidInfo& hid) const
+bool SignalBridgePlugin::ValidateScriptEndpoint(
+    const SignalBridgeScriptMeta& meta,
+    const SignalBridgeHidInfo& hid,
+    int generation)
 {
     if(!meta.has_validate)
     {
@@ -825,7 +862,15 @@ bool SignalBridgePlugin::ValidateScriptEndpoint(const SignalBridgeScriptMeta& me
 
     try
     {
-        SignalBridgeJsRuntime runtime = SignalBridgeJsRuntime::CreateValidation(meta);
+        SignalBridgeScriptLogCallback log_callback =
+            [this, generation](const std::string& source, const std::string& message) {
+                if(IsDiscoveryStale(generation))
+                {
+                    return;
+                }
+                emit this->ScriptLogReceived(FormatScriptLogLine("Validate", source, message));
+            };
+        SignalBridgeJsRuntime runtime = SignalBridgeJsRuntime::CreateValidation(meta, log_callback);
         QJsonObject endpoint;
         endpoint.insert("interface", hid.interface_number.value_or(-1));
         endpoint.insert("usage", hid.usage.value_or(0));
@@ -848,6 +893,72 @@ void SignalBridgePlugin::SetStatusText(const std::string& text)
     if(status_label != nullptr)
     {
         status_label->setText(QString::fromStdString(status_message));
+    }
+}
+
+void SignalBridgePlugin::ClearLogOutput()
+{
+    log_lines.clear();
+    details_message.clear();
+
+    if(details_text != nullptr)
+    {
+        details_text->clear();
+    }
+    if(log_view_button != nullptr)
+    {
+        log_view_button->setText(tr("Log Output"));
+    }
+}
+
+void SignalBridgePlugin::AppendLogLine(const QString& line)
+{
+    if(line.isNull())
+    {
+        return;
+    }
+
+    const QString timestamp = QDateTime::currentDateTime().toString("HH:mm:ss.zzz");
+    QStringList appended;
+    for(const QString& raw_line : line.split('\n'))
+    {
+        const QString entry = QString("[%1] %2").arg(timestamp, raw_line);
+        log_lines.append(entry);
+        appended.append(entry);
+    }
+
+    bool rebuild = false;
+    while(log_lines.size() > MaxFrontendLogLines)
+    {
+        log_lines.removeFirst();
+        rebuild = true;
+    }
+
+    const QString log_text = log_lines.join('\n');
+    details_message = log_text.toStdString();
+    if(log_view_button != nullptr)
+    {
+        log_view_button->setText(tr("Log Output (%1)").arg(log_lines.size()));
+    }
+
+    if(details_text != nullptr)
+    {
+        if(rebuild)
+        {
+            details_text->setPlainText(log_text);
+        }
+        else
+        {
+            for(const QString& entry : appended)
+            {
+                details_text->appendPlainText(entry);
+            }
+        }
+
+        if(QScrollBar* scroll_bar = details_text->verticalScrollBar())
+        {
+            scroll_bar->setValue(scroll_bar->maximum());
+        }
     }
 }
 
@@ -1315,9 +1426,16 @@ void SignalBridgePlugin::ApplyDiscoveryStatus(
     }
 
     status_message = status.toStdString();
-    details_message = details.toStdString();
     discovery_progress = std::clamp(progress, 0, 100);
     SetStatusText(status_message);
+    if(!status.isEmpty())
+    {
+        AppendLogLine(QString("[Discovery] %1").arg(status));
+    }
+    if(!details.isEmpty())
+    {
+        AppendLogLine(QString("[Discovery]\n%1").arg(details));
+    }
 
     if(progress_bar != nullptr)
     {
@@ -1326,10 +1444,6 @@ void SignalBridgePlugin::ApplyDiscoveryStatus(
         progress_bar->setVisible(running);
     }
 
-    if(details_text != nullptr)
-    {
-        details_text->setPlainText(details);
-    }
     SetScriptTable(scripts, running);
     if(!devices.isNull())
     {

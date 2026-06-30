@@ -60,6 +60,7 @@ signals:
         const QString& devices,
         bool running,
         int progress);
+    void ScriptLogReceived(const QString& line);
 
 private slots:
     void ApplyDiscoveryStatus(
@@ -74,6 +75,7 @@ private slots:
     void ShowScriptListView();
     void ShowDeviceListView();
     void OnDeviceSelectionChanged();
+    void AppendLogLine(const QString& line);
 
 private:
     void EnsureWidget();
@@ -82,8 +84,9 @@ private:
     void StopDiscoveryThread();
     bool IsDiscoveryStale(int generation) const;
     void RemoveControllers(ResourceManagerInterface* manager);
-    bool ValidateScriptEndpoint(const SignalBridgeScriptMeta& meta, const SignalBridgeHidInfo& hid) const;
+    bool ValidateScriptEndpoint(const SignalBridgeScriptMeta& meta, const SignalBridgeHidInfo& hid, int generation);
     void SetStatusText(const std::string& text);
+    void ClearLogOutput();
     void SetActiveView(int index);
     void SetScriptTable(const QStringList& scripts, bool running);
     void SetDeviceList(const QString& devices, bool running);
@@ -118,6 +121,7 @@ private:
     int discovery_progress = 0;
     std::string status_message;
     std::string details_message;
+    QStringList log_lines;
     QStringList script_table_items;
     QJsonArray device_records;
     QJsonObject device_config_store;

@@ -28,12 +28,14 @@ class SignalBridgeScriptScanner
 public:
     SignalBridgeScanReport ScanDirectory(
         const std::string& script_directory,
-        SignalBridgeScanProgressCallback progress_callback = {}) const;
+        SignalBridgeScanProgressCallback progress_callback = {},
+        SignalBridgeScriptLogCallback log_callback = {}) const;
 
 private:
     std::optional<SignalBridgeScriptMeta> ScanScript(
         const SignalBridgeScriptSource& script,
-        const std::vector<SignalBridgeScriptSource>& catalog) const;
+        const std::vector<SignalBridgeScriptSource>& catalog,
+        const SignalBridgeScriptLogCallback& log_callback) const;
 };
 
 #endif // SIGNALBRIDGESCRIPTSCANNER_H

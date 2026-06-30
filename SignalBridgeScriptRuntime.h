@@ -2,6 +2,7 @@
 #define SIGNALBRIDGESCRIPTRUNTIME_H
 
 #include <cstdint>
+#include <functional>
 #include <map>
 #include <memory>
 #include <optional>
@@ -55,6 +56,8 @@ struct SignalBridgeJsCallbackState;
 struct SignalBridgeJsModuleState;
 struct SignalBridgeModuleLoaderState;
 
+using SignalBridgeScriptLogCallback = std::function<void(const std::string& source, const std::string& message)>;
+
 class SignalBridgeJsRuntime
 {
 public:
@@ -67,8 +70,12 @@ public:
     SignalBridgeJsRuntime(SignalBridgeJsRuntime&& other) noexcept;
     SignalBridgeJsRuntime& operator=(SignalBridgeJsRuntime&& other) noexcept;
 
-    static SignalBridgeJsRuntime CreateScan();
-    static SignalBridgeJsRuntime CreateValidation(const SignalBridgeScriptMeta& meta);
+    static SignalBridgeJsRuntime CreateScan(
+        SignalBridgeScriptLogCallback log_callback = {},
+        std::string log_source = {});
+    static SignalBridgeJsRuntime CreateValidation(
+        const SignalBridgeScriptMeta& meta,
+        SignalBridgeScriptLogCallback log_callback = {});
     static SignalBridgeJsRuntime CreateRuntime(
         std::shared_ptr<SignalBridgeHidBackend> hid_backend,
         const SignalBridgeScriptMeta& meta,
@@ -76,7 +83,8 @@ public:
         const SignalBridgeHidInfo& primary_hid,
         std::map<std::string, SignalBridgeHidBackend::Handle> endpoint_handles,
         std::vector<SignalBridgeEndpointDescriptor> endpoints,
-        QJsonObject configuration = QJsonObject());
+        QJsonObject configuration = QJsonObject(),
+        SignalBridgeScriptLogCallback log_callback = {});
 
     void Eval(const std::string& source, const std::string& name);
     void LoadModule(

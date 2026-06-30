@@ -546,8 +546,26 @@ var device = (function() {
             return [0, 0, 0];
         },
 
-        log: function(msg) {
-            _log(typeof msg === "string" ? msg : JSON.stringify(msg));
+        log: function() {
+            var count = arguments.length;
+            if (count > 1) {
+                var maybeOptions = arguments[count - 1];
+                if (maybeOptions && typeof maybeOptions === "object" && !Array.isArray(maybeOptions) &&
+                    Object.prototype.hasOwnProperty.call(maybeOptions, "toFile")) {
+                    count--;
+                }
+            }
+
+            var parts = [];
+            for (var i = 0; i < count; i++) {
+                parts.push(typeof arguments[i] === "string"
+                    ? arguments[i]
+                    : JSON.stringify(arguments[i]));
+            }
+
+            if (typeof _log === "function") {
+                _log(parts.join(" "));
+            }
         },
 
         pause: function(ms) { _pause(ms || 0); },

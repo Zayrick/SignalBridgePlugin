@@ -249,12 +249,14 @@ RGBController_SignalBridgeScript::RGBController_SignalBridgeScript(
     SignalBridgeScriptMeta meta,
     SignalBridgeHidInfo primary_hid,
     QJsonObject configuration,
-    std::string config_key)
+    std::string config_key,
+    SignalBridgeScriptLogCallback log_callback)
     : hid_backend_(std::move(hid_backend))
     , meta_(std::move(meta))
     , primary_hid_(std::move(primary_hid))
     , configuration_(std::move(configuration))
     , config_key_(std::move(config_key))
+    , log_callback_(std::move(log_callback))
 {
     if(config_key_.empty())
     {
@@ -470,7 +472,8 @@ void RGBController_SignalBridgeScript::CreateRuntime()
         primary_hid_,
         endpoint_handles_,
         endpoints_,
-        configuration_));
+        configuration_,
+        log_callback_));
 }
 
 void RGBController_SignalBridgeScript::InitializeScript()
