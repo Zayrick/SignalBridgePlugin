@@ -1,0 +1,76 @@
+{
+  "version": 3,
+  "cmakeMinimumRequired": {
+    "major": 3,
+    "minor": 21,
+    "patch": 0
+  },
+  "configurePresets": [
+    {
+      "name": "base",
+      "hidden": true,
+      "binaryDir": "${sourceDir}/build/${presetName}",
+      "cacheVariables": {
+        "CMAKE_EXPORT_COMPILE_COMMANDS": true
+      }
+    },
+    {
+      "name": "qt6-debug",
+      "displayName": "Qt 6 Debug",
+      "inherits": "base",
+      "cacheVariables": {
+        "CMAKE_CONFIGURATION_TYPES": "Debug",
+        "CMAKE_PREFIX_PATH": "C:/Qt/6.11.1/msvc2022_64"
+      }
+    },
+    {
+      "name": "qt6-release",
+      "displayName": "Qt 6 Release",
+      "inherits": "base",
+      "cacheVariables": {
+        "CMAKE_CONFIGURATION_TYPES": "Release",
+        "CMAKE_PREFIX_PATH": "C:/Qt/6.11.1/msvc2022_64"
+      }
+    },
+    {
+      "name": "qt5-debug",
+      "displayName": "Qt 5 Debug",
+      "inherits": "base",
+      "cacheVariables": {
+        "CMAKE_CONFIGURATION_TYPES": "Debug",
+        "CMAKE_PREFIX_PATH": "C:/Qt/5.15.2/msvc2019_64"
+      }
+    },
+    {
+      "name": "qt5-release",
+      "displayName": "Qt 5 Release",
+      "inherits": "base",
+      "cacheVariables": {
+        "CMAKE_CONFIGURATION_TYPES": "Release",
+        "CMAKE_PREFIX_PATH": "C:/Qt/5.15.2/msvc2019_64"
+      }
+    }
+  ],
+  "buildPresets": [
+    {
+      "name": "qt6-debug",
+      "configurePreset": "qt6-debug",
+      "configuration": "Debug"
+    },
+    {
+      "name": "qt6-release",
+      "configurePreset": "qt6-release",
+      "configuration": "Release"
+    },
+    {
+      "name": "qt5-debug",
+      "configurePreset": "qt5-debug",
+      "configuration": "Debug"
+    },
+    {
+      "name": "qt5-release",
+      "configurePreset": "qt5-release",
+      "configuration": "Release"
+    }
+  ]
+}
