@@ -5,6 +5,7 @@
 #include <set>
 #include <stdexcept>
 
+#include <QByteArray>
 #include <QJsonArray>
 #include <QJsonObject>
 #include <QJsonValue>
@@ -417,19 +418,57 @@ void RGBController_SignalBridgeScript::SetConfiguration(QJsonObject configuratio
 {
     std::lock_guard<std::mutex> lock(mutex_);
     configuration_ = std::move(configuration);
-    if(runtime_ != nullptr)
-    {
-        runtime_->ApplyConfiguration(meta_, configuration_);
-    }
+    ApplyConfigurationToRuntime();
 }
 
 void RGBController_SignalBridgeScript::SetConfigurationValue(const QString& property, const QJsonValue& value)
 {
     std::lock_guard<std::mutex> lock(mutex_);
     configuration_.insert(property, value);
+    ApplyConfigurationToRuntime(property);
+}
+
+void RGBController_SignalBridgeScript::ApplyConfigurationToRuntime(const QString& changed_property)
+{
     if(runtime_ != nullptr)
     {
-        runtime_->ApplyConfiguration(meta_, configuration_);
+        try
+        {
+            runtime_->ApplyConfiguration(meta_, configuration_);
+        }
+        catch(const std::exception& err)
+        {
+            if(log_callback_)
+            {
+                std::string message = "Failed to apply configuration";
+                if(!changed_property.isEmpty())
+                {
+                    const QByteArray property = changed_property.toUtf8();
+                    message += " \"";
+                    message += property.constData();
+                    message += "\"";
+                }
+                message += ": ";
+                message += err.what();
+                log_callback_(meta_.lookup_path.empty() ? meta_.source_path : meta_.lookup_path, message);
+            }
+        }
+        catch(...)
+        {
+            if(log_callback_)
+            {
+                std::string message = "Failed to apply configuration";
+                if(!changed_property.isEmpty())
+                {
+                    const QByteArray property = changed_property.toUtf8();
+                    message += " \"";
+                    message += property.constData();
+                    message += "\"";
+                }
+                message += ": unknown error";
+                log_callback_(meta_.lookup_path.empty() ? meta_.source_path : meta_.lookup_path, message);
+            }
+        }
     }
 }
 

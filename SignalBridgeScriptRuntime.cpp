@@ -1281,13 +1281,13 @@ void SignalBridgeJsRuntime::SetGlobalJson(const std::string& name, const QJsonVa
         const std::string error = FormatException();
         JS_FreeValue(context_, js_value);
         JS_FreeValue(context_, global);
-        throw std::runtime_error(error);
+        throw std::runtime_error("failed to set global '" + name + "': " + error);
     }
     if(JS_SetPropertyStr(context_, global, name.c_str(), js_value) < 0)
     {
         const std::string error = FormatException();
         JS_FreeValue(context_, global);
-        throw std::runtime_error(error);
+        throw std::runtime_error("failed to set global '" + name + "': " + error);
     }
     JS_FreeValue(context_, global);
 }

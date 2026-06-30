@@ -61,6 +61,7 @@ private:
     void OpenEndpoints();
     void CreateRuntime();
     void InitializeScript();
+    void ApplyConfigurationToRuntime(const QString& changed_property = QString());
     void BuildZonesFromTopology(const QJsonObject& topology);
     void RebuildLedList();
     void DeleteZoneMaps();
