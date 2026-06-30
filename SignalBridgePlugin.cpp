@@ -5,16 +5,58 @@
 #include <set>
 #include <stdexcept>
 
+#include <QAbstractItemView>
+#include <QFileInfo>
+#include <QHeaderView>
+#include <QHBoxLayout>
 #include <QLabel>
 #include <QPlainTextEdit>
 #include <QProgressBar>
 #include <QPushButton>
 #include <QStringList>
+#include <QStackedWidget>
+#include <QTableWidget>
+#include <QTableWidgetItem>
 #include <QVBoxLayout>
 
 #include "RGBController_SignalBridgeScript.h"
 #include "SignalBridgeHid.h"
 #include "SignalBridgeScriptScanner.h"
+
+namespace
+{
+constexpr int ScriptTableColumnCount = 5;
+
+QString FormatHex16(std::uint16_t value)
+{
+    return QString("0x%1").arg(value, 4, 16, QLatin1Char('0'));
+}
+
+QStringList FormatScriptTable(const std::vector<SignalBridgeScriptMeta>& scripts)
+{
+    QStringList cells;
+
+    for(const SignalBridgeScriptMeta& meta : scripts)
+    {
+        const QString source_path = QString::fromStdString(meta.source_path);
+        const QString file_name = QFileInfo(source_path).fileName();
+
+        QString name = QString::fromStdString(meta.name);
+        if(name.isEmpty())
+        {
+            name = file_name;
+        }
+
+        cells << file_name
+              << (meta.vid.has_value() ? FormatHex16(*meta.vid) : QString())
+              << QString::fromStdString(meta.device_type)
+              << name
+              << QString::fromStdString(meta.publisher);
+    }
+
+    return cells;
+}
+}
 
 SignalBridgePlugin::SignalBridgePlugin(QObject* parent)
     : QObject(parent)
@@ -56,6 +98,7 @@ void SignalBridgePlugin::Load(ResourceManagerInterface* resource_manager_ptr)
     resource_manager = resource_manager_ptr;
     status_message = "SignalRGB discovery queued";
     details_message.clear();
+    script_table_items.clear();
     DiscoverSignalRgbDevices();
 }
 
@@ -79,6 +122,7 @@ void SignalBridgePlugin::Unload()
     status_message = "Plugin unloaded";
     discovery_progress = 0;
     details_message.clear();
+    script_table_items.clear();
 
     if(status_label != nullptr)
     {
@@ -88,6 +132,7 @@ void SignalBridgePlugin::Unload()
     {
         details_text->clear();
     }
+    SetScriptTable(script_table_items, false);
     if(progress_bar != nullptr)
     {
         progress_bar->setRange(0, 100);
@@ -128,12 +173,51 @@ void SignalBridgePlugin::EnsureWidget()
     rescan_button->setObjectName("SignalBridgePluginRescanButton");
     layout->addWidget(rescan_button);
 
-    details_text = new QPlainTextEdit(widget);
+    view_stack = new QStackedWidget(widget);
+    view_stack->setObjectName("SignalBridgePluginViewStack");
+
+    details_text = new QPlainTextEdit(view_stack);
     details_text->setObjectName("SignalBridgePluginDetailsText");
     details_text->setReadOnly(true);
-    layout->addWidget(details_text);
+    view_stack->addWidget(details_text);
+
+    scripts_table = new QTableWidget(view_stack);
+    scripts_table->setObjectName("SignalBridgePluginScriptTable");
+    scripts_table->setColumnCount(ScriptTableColumnCount);
+    scripts_table->setHorizontalHeaderLabels({
+        tr("File Name"),
+        tr("VID"),
+        tr("Device Type"),
+        tr("Script Name"),
+        tr("Publisher"),
+    });
+    scripts_table->setEditTriggers(QAbstractItemView::NoEditTriggers);
+    scripts_table->setSelectionMode(QAbstractItemView::NoSelection);
+    scripts_table->setAlternatingRowColors(true);
+    scripts_table->verticalHeader()->setVisible(false);
+    scripts_table->horizontalHeader()->setStretchLastSection(true);
+    scripts_table->horizontalHeader()->setSectionResizeMode(QHeaderView::ResizeToContents);
+    view_stack->addWidget(scripts_table);
+
+    layout->addWidget(view_stack, 1);
+
+    auto* view_buttons_layout = new QHBoxLayout();
+
+    log_view_button = new QPushButton(tr("Log Output"), widget);
+    log_view_button->setObjectName("SignalBridgePluginLogViewButton");
+    log_view_button->setCheckable(true);
+    view_buttons_layout->addWidget(log_view_button);
+
+    script_list_view_button = new QPushButton(tr("Script List"), widget);
+    script_list_view_button->setObjectName("SignalBridgePluginScriptListViewButton");
+    script_list_view_button->setCheckable(true);
+    view_buttons_layout->addWidget(script_list_view_button);
+
+    layout->addLayout(view_buttons_layout);
 
     connect(rescan_button, &QPushButton::clicked, this, &SignalBridgePlugin::DiscoverSignalRgbDevices);
+    connect(log_view_button, &QPushButton::clicked, this, &SignalBridgePlugin::ShowLogView);
+    connect(script_list_view_button, &QPushButton::clicked, this, &SignalBridgePlugin::ShowScriptListView);
     const bool running = discovery_running.load();
     progress_bar->setVisible(running);
     rescan_button->setVisible(!running);
@@ -143,6 +227,8 @@ void SignalBridgePlugin::EnsureWidget()
     {
         details_text->setPlainText(QString::fromStdString(details_message));
     }
+    SetScriptTable(script_table_items, running);
+    SetActiveView(0);
 }
 
 void SignalBridgePlugin::DiscoverSignalRgbDevices()
@@ -166,7 +252,7 @@ void SignalBridgePlugin::DiscoverSignalRgbDevices()
     discovery_cancel_requested.store(false);
     const int generation = discovery_generation.fetch_add(1) + 1;
     discovery_running.store(true);
-    ApplyDiscoveryStatus(generation, "Scanning SignalRGB scripts...", "", true, 0);
+    ApplyDiscoveryStatus(generation, "Scanning SignalRGB scripts...", "", QStringList(), true, 0);
 
     discovery_thread = std::thread(&SignalBridgePlugin::DiscoveryWorker, this, generation, resource_manager);
 }
@@ -176,6 +262,7 @@ void SignalBridgePlugin::DiscoveryWorker(int generation, ResourceManagerInterfac
     unsigned int matched = 0;
     unsigned int failed = 0;
     QStringList detail_lines;
+    QStringList discovered_scripts;
 
     try
     {
@@ -218,6 +305,7 @@ void SignalBridgePlugin::DiscoveryWorker(int generation, ResourceManagerInterfac
                         .arg(static_cast<qulonglong>(completed))
                         .arg(static_cast<qulonglong>(total)),
                     "",
+                    QStringList(),
                     true,
                     progress);
             });
@@ -227,14 +315,16 @@ void SignalBridgePlugin::DiscoveryWorker(int generation, ResourceManagerInterfac
             return;
         }
 
-        emit DiscoveryStatusChanged(generation, "Enumerating HID interfaces...", "", true, 72);
+        discovered_scripts = FormatScriptTable(report.scripts);
+
+        emit DiscoveryStatusChanged(generation, "Enumerating HID interfaces...", "", discovered_scripts, true, 72);
         const std::vector<SignalBridgeHidInfo> hid_devices = new_hid_backend->Enumerate();
         if(IsDiscoveryStale(generation))
         {
             discovery_running.store(false);
             return;
         }
-        emit DiscoveryStatusChanged(generation, "Matching scripts to HID devices...", "", true, 80);
+        emit DiscoveryStatusChanged(generation, "Matching scripts to HID devices...", "", discovered_scripts, true, 80);
 
         std::map<std::pair<std::uint16_t, std::uint16_t>, std::vector<SignalBridgeHidInfo>> by_vid_pid;
         for(const SignalBridgeHidInfo& hid : hid_devices)
@@ -269,6 +359,7 @@ void SignalBridgePlugin::DiscoveryWorker(int generation, ResourceManagerInterfac
                         .arg(static_cast<qulonglong>(meta_index + 1))
                         .arg(static_cast<qulonglong>(report.scripts.size())),
                     "",
+                    discovered_scripts,
                     true,
                     register_progress);
             }
@@ -354,6 +445,7 @@ void SignalBridgePlugin::DiscoveryWorker(int generation, ResourceManagerInterfac
         emit DiscoveryStatusChanged(generation,
                                     QString::fromStdString(status),
                                     detail_lines.join('\n'),
+                                    discovered_scripts,
                                     false,
                                     100);
     }
@@ -364,6 +456,7 @@ void SignalBridgePlugin::DiscoveryWorker(int generation, ResourceManagerInterfac
             generation,
             QString::fromStdString(std::string("SignalRGB script discovery failed: ") + err.what()),
             "",
+            QStringList(),
             false,
             0);
     }
@@ -436,7 +529,76 @@ void SignalBridgePlugin::SetStatusText(const std::string& text)
     }
 }
 
-void SignalBridgePlugin::ApplyDiscoveryStatus(int generation, const QString& status, const QString& details, bool running, int progress)
+void SignalBridgePlugin::SetActiveView(int index)
+{
+    if(view_stack != nullptr)
+    {
+        view_stack->setCurrentIndex(index);
+    }
+
+    if(log_view_button != nullptr)
+    {
+        log_view_button->setChecked(index == 0);
+    }
+
+    if(script_list_view_button != nullptr)
+    {
+        script_list_view_button->setChecked(index == 1);
+    }
+}
+
+void SignalBridgePlugin::SetScriptTable(const QStringList& scripts, bool running)
+{
+    script_table_items = scripts;
+    const int script_count = script_table_items.size() / ScriptTableColumnCount;
+
+    if(script_list_view_button != nullptr)
+    {
+        script_list_view_button->setText(tr("Script List (%1)").arg(script_count));
+    }
+
+    if(scripts_table == nullptr)
+    {
+        return;
+    }
+
+    scripts_table->setRowCount(0);
+    if(running && script_table_items.isEmpty())
+    {
+        scripts_table->setRowCount(1);
+        scripts_table->setItem(0, 0, new QTableWidgetItem(tr("Scanning SignalRGB scripts...")));
+        return;
+    }
+
+    if(script_table_items.isEmpty())
+    {
+        scripts_table->setRowCount(1);
+        scripts_table->setItem(0, 0, new QTableWidgetItem(tr("No SignalRGB scripts found.")));
+        return;
+    }
+
+    scripts_table->setRowCount(script_count);
+    for(int row = 0; row < script_count; row++)
+    {
+        for(int column = 0; column < ScriptTableColumnCount; column++)
+        {
+            const int cell_index = row * ScriptTableColumnCount + column;
+            scripts_table->setItem(row, column, new QTableWidgetItem(script_table_items.at(cell_index)));
+        }
+    }
+}
+
+void SignalBridgePlugin::ShowLogView()
+{
+    SetActiveView(0);
+}
+
+void SignalBridgePlugin::ShowScriptListView()
+{
+    SetActiveView(1);
+}
+
+void SignalBridgePlugin::ApplyDiscoveryStatus(int generation, const QString& status, const QString& details, const QStringList& scripts, bool running, int progress)
 {
     if(generation != discovery_generation.load())
     {
@@ -459,6 +621,7 @@ void SignalBridgePlugin::ApplyDiscoveryStatus(int generation, const QString& sta
     {
         details_text->setPlainText(details);
     }
+    SetScriptTable(scripts, running);
 
     if(rescan_button != nullptr)
     {

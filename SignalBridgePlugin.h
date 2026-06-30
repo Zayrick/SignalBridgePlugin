@@ -10,6 +10,7 @@
 #include <QMenu>
 #include <QObject>
 #include <QString>
+#include <QStringList>
 #include <QWidget>
 
 #include "OpenRGBPluginInterface.h"
@@ -20,6 +21,8 @@ class QLabel;
 class QPlainTextEdit;
 class QProgressBar;
 class QPushButton;
+class QStackedWidget;
+class QTableWidget;
 class RGBController_SignalBridgeScript;
 class SignalBridgeHidBackend;
 struct SignalBridgeHidInfo;
@@ -44,10 +47,12 @@ public:
     void Unload() override;
 
 signals:
-    void DiscoveryStatusChanged(int generation, const QString& status, const QString& details, bool running, int progress);
+    void DiscoveryStatusChanged(int generation, const QString& status, const QString& details, const QStringList& scripts, bool running, int progress);
 
 private slots:
-    void ApplyDiscoveryStatus(int generation, const QString& status, const QString& details, bool running, int progress);
+    void ApplyDiscoveryStatus(int generation, const QString& status, const QString& details, const QStringList& scripts, bool running, int progress);
+    void ShowLogView();
+    void ShowScriptListView();
 
 private:
     void EnsureWidget();
@@ -58,13 +63,19 @@ private:
     void RemoveControllers(ResourceManagerInterface* manager);
     bool ValidateScriptEndpoint(const SignalBridgeScriptMeta& meta, const SignalBridgeHidInfo& hid) const;
     void SetStatusText(const std::string& text);
+    void SetActiveView(int index);
+    void SetScriptTable(const QStringList& scripts, bool running);
 
     ResourceManagerInterface* resource_manager = nullptr;
     QWidget* widget = nullptr;
     QLabel* status_label = nullptr;
     QProgressBar* progress_bar = nullptr;
+    QStackedWidget* view_stack = nullptr;
     QPlainTextEdit* details_text = nullptr;
+    QTableWidget* scripts_table = nullptr;
     QPushButton* rescan_button = nullptr;
+    QPushButton* log_view_button = nullptr;
+    QPushButton* script_list_view_button = nullptr;
     std::shared_ptr<SignalBridgeHidBackend> hid_backend;
     std::vector<RGBController_SignalBridgeScript*> controllers;
     std::thread discovery_thread;
@@ -74,6 +85,7 @@ private:
     int discovery_progress = 0;
     std::string status_message;
     std::string details_message;
+    QStringList script_table_items;
 };
 
 #endif // SIGNALBRIDGEPLUGIN_H
