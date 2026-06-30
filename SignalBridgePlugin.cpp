@@ -92,10 +92,12 @@ void SignalBridgePlugin::Unload()
     {
         progress_bar->setRange(0, 100);
         progress_bar->setValue(0);
+        progress_bar->setVisible(false);
     }
     if(rescan_button != nullptr)
     {
         rescan_button->setEnabled(false);
+        rescan_button->setVisible(true);
     }
 }
 
@@ -132,7 +134,10 @@ void SignalBridgePlugin::EnsureWidget()
     layout->addWidget(details_text);
 
     connect(rescan_button, &QPushButton::clicked, this, &SignalBridgePlugin::DiscoverSignalRgbDevices);
-    rescan_button->setEnabled(resource_manager != nullptr && !discovery_running.load());
+    const bool running = discovery_running.load();
+    progress_bar->setVisible(running);
+    rescan_button->setVisible(!running);
+    rescan_button->setEnabled(resource_manager != nullptr && !running);
     SetStatusText(status_message);
     if(details_text != nullptr)
     {
@@ -447,6 +452,7 @@ void SignalBridgePlugin::ApplyDiscoveryStatus(int generation, const QString& sta
     {
         progress_bar->setRange(0, 100);
         progress_bar->setValue(discovery_progress);
+        progress_bar->setVisible(running);
     }
 
     if(details_text != nullptr)
@@ -456,6 +462,7 @@ void SignalBridgePlugin::ApplyDiscoveryStatus(int generation, const QString& sta
 
     if(rescan_button != nullptr)
     {
+        rescan_button->setVisible(!running);
         rescan_button->setEnabled(resource_manager != nullptr && !running);
     }
 }
