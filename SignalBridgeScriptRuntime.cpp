@@ -2,6 +2,8 @@
 
 #include <algorithm>
 #include <chrono>
+#include <cctype>
+#include <set>
 #include <sstream>
 #include <stdexcept>
 #include <thread>
@@ -15,27 +17,6 @@ extern "C" {
 
 namespace
 {
-constexpr const char* kSetupParamsJs = R"JS(
-(function() {
-    var g = (typeof globalThis !== 'undefined') ? globalThis : this;
-    try {
-        var params = (typeof ControllableParameters === 'function')
-            ? ControllableParameters() : [];
-        if (!Array.isArray(params)) params = [];
-        for (var i = 0; i < params.length; i++) {
-            var p = params[i];
-            if (!p || !p.property) continue;
-            if (typeof g[p.property] !== 'undefined') continue;
-            var def = p['default'];
-            if (p.type === 'boolean')      g[p.property] = (def === 'true' || def === true);
-            else if (p.type === 'number')  g[p.property] = Number(def) || 0;
-            else                            g[p.property] = (def != null) ? String(def) : '';
-        }
-    } catch(e) {}
-    g['LightingMode'] = 'Canvas';
-})();
-)JS";
-
 constexpr const char* kApplyStaticMetadataJs = R"JS(
 (function() {
     if (typeof device === 'undefined') return;
@@ -55,6 +36,204 @@ constexpr const char* kApplyStaticMetadataJs = R"JS(
     }
 })();
 )JS";
+
+std::string LowerAscii(std::string value)
+{
+    std::transform(value.begin(), value.end(), value.begin(), [](unsigned char ch) {
+        return static_cast<char>(std::tolower(ch));
+    });
+    return value;
+}
+
+std::string NormalizeLookupPath(std::string path)
+{
+    std::replace(path.begin(), path.end(), '\\', '/');
+
+    std::vector<std::string> parts;
+    std::size_t start = 0;
+    while(start <= path.size())
+    {
+        const std::size_t slash = path.find('/', start);
+        const std::string part = slash == std::string::npos
+                                     ? path.substr(start)
+                                     : path.substr(start, slash - start);
+        if(part.empty() || part == ".")
+        {
+        }
+        else if(part == "..")
+        {
+            if(!parts.empty())
+            {
+                parts.pop_back();
+            }
+        }
+        else
+        {
+            parts.push_back(part);
+        }
+
+        if(slash == std::string::npos)
+        {
+            break;
+        }
+        start = slash + 1;
+    }
+
+    std::string normalized;
+    for(std::size_t idx = 0; idx < parts.size(); idx++)
+    {
+        if(idx > 0)
+        {
+            normalized += '/';
+        }
+        normalized += parts[idx];
+    }
+    return normalized;
+}
+
+std::string LookupDir(const std::string& path)
+{
+    const std::string normalized = NormalizeLookupPath(path);
+    const std::size_t slash = normalized.find_last_of('/');
+    return slash == std::string::npos ? std::string() : normalized.substr(0, slash);
+}
+
+std::string JoinLookupPath(const std::string& lhs, const std::string& rhs)
+{
+    return lhs.empty() ? rhs : lhs + "/" + rhs;
+}
+
+constexpr const char* kErrorsModuleJs = R"JS(
+const ContextErrorExport = globalThis.ContextError || function ContextError(message) {
+    this.message = message || "";
+    this.name = "ContextError";
+};
+const AssertExport = globalThis.Assert || {
+    isOk: function(value, message) { if (!value) throw new ContextErrorExport(message || "Assertion failed"); },
+    fail: function(message) { throw new ContextErrorExport(message || "Assertion failed"); },
+    unreachable: function(message) { throw new ContextErrorExport(message || "Unreachable"); },
+    isEqual: function(a, b, message) { if (a !== b) throw new ContextErrorExport(message || "Assertion failed"); },
+    softIsDefined: function(value) { return value !== undefined && value !== null; },
+};
+const globalContextExport = globalThis.globalContext || {};
+const globalContextValues = globalThis.__signalBridgeGlobalContextValues || Object.create(null);
+globalThis.__signalBridgeGlobalContextValues = globalContextValues;
+const originalGlobalContextSet = typeof globalContextExport.set === "function" ? globalContextExport.set : null;
+const originalGlobalContextGet = typeof globalContextExport.get === "function" ? globalContextExport.get : null;
+globalContextExport.set = function(key, value) {
+    globalContextValues[String(key)] = value;
+    if (originalGlobalContextSet) {
+        originalGlobalContextSet.call(this, key, value);
+    }
+};
+globalContextExport.get = function(key) {
+    if (originalGlobalContextGet) {
+        const value = originalGlobalContextGet.call(this, key);
+        if (value !== undefined) {
+            return value;
+        }
+    }
+    return globalContextValues[String(key)];
+};
+globalContextExport.has = function(key) {
+    return Object.prototype.hasOwnProperty.call(globalContextValues, String(key));
+};
+globalContextExport.clear = function(key) {
+    delete globalContextValues[String(key)];
+};
+globalThis.globalContext = globalContextExport;
+export { AssertExport as Assert, ContextErrorExport as ContextError, globalContextExport as globalContext };
+export default { Assert: AssertExport, ContextError: ContextErrorExport, globalContext: globalContextExport };
+)JS";
+
+constexpr const char* kDeviceDiscoveryModuleJs = R"JS(
+const DeviceDiscoveryExport = globalThis.DeviceDiscovery || {
+    foundVirtualDevice: function() {},
+};
+export { DeviceDiscoveryExport as DeviceDiscovery };
+export default DeviceDiscoveryExport;
+)JS";
+
+constexpr const char* kPermissionsModuleJs = R"JS(
+const permissionsExport = globalThis.permissions || {
+    permissions: function() { return []; },
+    setCallback: function() {},
+};
+export { permissionsExport as permissions };
+export default permissionsExport;
+)JS";
+
+constexpr const char* kSystemInfoModuleJs = R"JS(
+const systeminfoExport = globalThis.systeminfo || {
+    GetMotherboardInfo: function() { return { model: "", manufacturer: "", product: "", vendor: "" }; },
+    GetBiosInfo: function() { return { vendor: "", version: "", date: "" }; },
+    GetRamInfo: function() { return { totalMemory: 0, modules: [] }; },
+};
+export { systeminfoExport as systeminfo };
+export default systeminfoExport;
+)JS";
+
+constexpr const char* kLcdModuleJs = R"JS(
+const LCDExport = globalThis.LCD || {
+    initialize: function() {},
+    getFrame: function() { return []; },
+};
+export { LCDExport as LCD };
+export default LCDExport;
+)JS";
+
+constexpr const char* kSerialModuleJs = R"JS(
+const serialExport = globalThis.serial || {
+    availablePorts: function() { return []; },
+    getDeviceInfo: function() { return {}; },
+    connect: function() { return false; },
+    disconnect: function() {},
+    isConnected: function() { return false; },
+    write: function() { return false; },
+    read: function() { return []; },
+};
+export { serialExport as serial };
+export default serialExport;
+)JS";
+
+std::string NormalizeBuiltinSpecifier(std::string specifier)
+{
+    if(specifier.size() > 3 && specifier.substr(specifier.size() - 3) == ".js")
+    {
+        specifier.resize(specifier.size() - 3);
+    }
+    return specifier;
+}
+
+const char* BuiltinModuleSource(const std::string& specifier)
+{
+    const std::string normalized = NormalizeBuiltinSpecifier(specifier);
+    if(normalized == "@SignalRGB/Errors")
+    {
+        return kErrorsModuleJs;
+    }
+    if(normalized == "@SignalRGB/DeviceDiscovery")
+    {
+        return kDeviceDiscoveryModuleJs;
+    }
+    if(normalized == "@SignalRGB/permissions")
+    {
+        return kPermissionsModuleJs;
+    }
+    if(normalized == "@SignalRGB/systeminfo")
+    {
+        return kSystemInfoModuleJs;
+    }
+    if(normalized == "@SignalRGB/lcd")
+    {
+        return kLcdModuleJs;
+    }
+    if(normalized == "@SignalRGB/serial")
+    {
+        return kSerialModuleJs;
+    }
+    return nullptr;
+}
 
 std::string JsonValueToString(const QJsonValue& value)
 {
@@ -385,8 +564,151 @@ struct SignalBridgeJsCallbackState
     std::string script_name;
 };
 
+struct SignalBridgeModuleLoaderState
+{
+    std::vector<SignalBridgeScriptSource> catalog;
+    std::vector<SignalBridgeScriptSource> loaded_modules;
+    std::set<std::string> loaded_keys;
+
+    void SetCatalog(const std::vector<SignalBridgeScriptSource>& sources)
+    {
+        catalog = sources;
+        loaded_modules.clear();
+        loaded_keys.clear();
+    }
+
+    void BeginLoad()
+    {
+        loaded_modules.clear();
+        loaded_keys.clear();
+    }
+
+    const SignalBridgeScriptSource* Find(const std::string& lookup_path) const
+    {
+        const std::string normalized = NormalizeLookupPath(lookup_path);
+        const std::string normalized_with_js = normalized.size() > 3 &&
+                                                       normalized.substr(normalized.size() - 3) == ".js"
+                                                   ? normalized
+                                                   : normalized + ".js";
+        const std::string key = LowerAscii(normalized);
+        const std::string key_with_js = LowerAscii(normalized_with_js);
+        for(const SignalBridgeScriptSource& source : catalog)
+        {
+            const std::string candidate = LowerAscii(NormalizeLookupPath(source.lookup_path));
+            if(candidate == key || candidate == key_with_js)
+            {
+                return &source;
+            }
+        }
+        return nullptr;
+    }
+
+    std::string Resolve(const std::string& base_name, const std::string& module_name) const
+    {
+        if(!module_name.empty() && module_name.front() == '.')
+        {
+            const std::string candidate = NormalizeLookupPath(JoinLookupPath(LookupDir(base_name), module_name));
+            if(const SignalBridgeScriptSource* source = Find(candidate))
+            {
+                return NormalizeLookupPath(source->lookup_path);
+            }
+            return candidate;
+        }
+
+        if(BuiltinModuleSource(module_name) != nullptr)
+        {
+            return NormalizeBuiltinSpecifier(module_name);
+        }
+
+        if(const SignalBridgeScriptSource* source = Find(module_name))
+        {
+            return NormalizeLookupPath(source->lookup_path);
+        }
+        return module_name;
+    }
+
+    void RecordLoaded(const SignalBridgeScriptSource& source)
+    {
+        const std::string key = LowerAscii(NormalizeLookupPath(source.lookup_path));
+        if(loaded_keys.insert(key).second)
+        {
+            loaded_modules.push_back(source);
+        }
+    }
+};
+
+struct SignalBridgeJsModuleState
+{
+    JSValue module = JS_UNDEFINED;
+    JSValue namespace_object = JS_UNDEFINED;
+    JSModuleDef* module_def = nullptr;
+    bool evaluated = false;
+};
+
 namespace
 {
+JSModuleDef* CompileModule(JSContext* context, const std::string& name, const std::string& source)
+{
+    JSValue compiled = JS_Eval(
+        context,
+        source.c_str(),
+        source.size(),
+        name.c_str(),
+        JS_EVAL_TYPE_MODULE | JS_EVAL_FLAG_COMPILE_ONLY);
+    if(JS_IsException(compiled))
+    {
+        return nullptr;
+    }
+
+    auto* module = static_cast<JSModuleDef*>(JS_VALUE_GET_PTR(compiled));
+    JS_FreeValue(context, compiled);
+    return module;
+}
+
+char* ModuleNormalizeJs(JSContext* context, const char* module_base_name, const char* module_name, void* opaque)
+{
+    auto* state = static_cast<SignalBridgeModuleLoaderState*>(opaque);
+    if(state == nullptr || module_name == nullptr)
+    {
+        return nullptr;
+    }
+
+    const std::string base = module_base_name != nullptr ? module_base_name : "";
+    const std::string normalized = state->Resolve(base, module_name);
+    if(!module_name[0] || (module_name[0] == '.' && state->Find(normalized) == nullptr))
+    {
+        JS_ThrowReferenceError(context, "relative import not found: %s from %s", module_name, base.c_str());
+        return nullptr;
+    }
+    return js_strdup(context, normalized.c_str());
+}
+
+JSModuleDef* ModuleLoadJs(JSContext* context, const char* module_name, void* opaque)
+{
+    auto* state = static_cast<SignalBridgeModuleLoaderState*>(opaque);
+    if(state == nullptr || module_name == nullptr)
+    {
+        JS_ThrowReferenceError(context, "module loader is not initialized");
+        return nullptr;
+    }
+
+    const std::string name = module_name;
+    if(const char* builtin = BuiltinModuleSource(name))
+    {
+        return CompileModule(context, name, builtin);
+    }
+
+    const SignalBridgeScriptSource* source = state->Find(name);
+    if(source == nullptr)
+    {
+        JS_ThrowReferenceError(context, "could not load module '%s'", module_name);
+        return nullptr;
+    }
+
+    state->RecordLoaded(*source);
+    return CompileModule(context, NormalizeLookupPath(source->lookup_path), source->source);
+}
+
 JSValue HidWriteJs(JSContext* context, JSValueConst, int argc, JSValueConst* argv)
 {
     SignalBridgeJsCallbackState* state = CallbackState(context);
@@ -586,6 +908,9 @@ SignalBridgeJsRuntime::SignalBridgeJsRuntime()
 
 SignalBridgeJsRuntime::SignalBridgeJsRuntime(bool create_context)
 {
+    module_state_ = std::make_unique<SignalBridgeJsModuleState>();
+    module_loader_state_ = std::make_unique<SignalBridgeModuleLoaderState>();
+
     if(!create_context)
     {
         return;
@@ -603,6 +928,8 @@ SignalBridgeJsRuntime::SignalBridgeJsRuntime(bool create_context)
         Reset();
         throw std::runtime_error("Failed to create QuickJS context");
     }
+
+    JS_SetModuleLoaderFunc(runtime_, ModuleNormalizeJs, ModuleLoadJs, module_loader_state_.get());
 }
 
 SignalBridgeJsRuntime::~SignalBridgeJsRuntime()
@@ -623,11 +950,14 @@ SignalBridgeJsRuntime& SignalBridgeJsRuntime::operator=(SignalBridgeJsRuntime&& 
         runtime_ = other.runtime_;
         context_ = other.context_;
         callback_state_ = std::move(other.callback_state_);
+        module_state_ = std::move(other.module_state_);
+        module_loader_state_ = std::move(other.module_loader_state_);
         other.runtime_ = nullptr;
         other.context_ = nullptr;
         if(context_ != nullptr)
         {
             JS_SetContextOpaque(context_, callback_state_.get());
+            JS_SetModuleLoaderFunc(runtime_, ModuleNormalizeJs, ModuleLoadJs, module_loader_state_.get());
         }
     }
     return *this;
@@ -644,7 +974,9 @@ SignalBridgeJsRuntime SignalBridgeJsRuntime::CreateScan()
 SignalBridgeJsRuntime SignalBridgeJsRuntime::CreateValidation(const SignalBridgeScriptMeta& meta)
 {
     SignalBridgeJsRuntime runtime = CreateScan();
-    runtime.Eval(meta.js_source, meta.source_path);
+    runtime.LoadModule(meta.lookup_path, meta.module_sources);
+    runtime.EvaluateModule();
+    runtime.ApplyConfiguration(meta, QJsonObject());
     return runtime;
 }
 
@@ -672,8 +1004,8 @@ SignalBridgeJsRuntime SignalBridgeJsRuntime::CreateRuntime(
                      "; device._pid = " + std::to_string(primary_hid.pid) + ";",
                  "<hid-info>");
     runtime.ApplyStaticMetadata(meta);
-    runtime.Eval(meta.js_source, meta.source_path);
-    runtime.Eval(kSetupParamsJs, "<setup-params>");
+    runtime.LoadModule(meta.lookup_path, meta.module_sources);
+    runtime.EvaluateModule();
     runtime.ApplyConfigurationValues(configuration);
     runtime.ApplyConfiguration(meta, configuration);
     return runtime;
@@ -691,6 +1023,82 @@ void SignalBridgeJsRuntime::Eval(const std::string& source, const std::string& n
     JS_FreeValue(context_, result);
 }
 
+void SignalBridgeJsRuntime::LoadModule(
+    const std::string& lookup_path,
+    const std::vector<SignalBridgeScriptSource>& catalog)
+{
+    if(module_state_ == nullptr)
+    {
+        module_state_ = std::make_unique<SignalBridgeJsModuleState>();
+    }
+    if(module_loader_state_ == nullptr)
+    {
+        module_loader_state_ = std::make_unique<SignalBridgeModuleLoaderState>();
+        JS_SetModuleLoaderFunc(runtime_, ModuleNormalizeJs, ModuleLoadJs, module_loader_state_.get());
+    }
+
+    ClearModuleState();
+    module_loader_state_->SetCatalog(catalog);
+    module_loader_state_->BeginLoad();
+
+    const SignalBridgeScriptSource* source = module_loader_state_->Find(lookup_path);
+    if(source == nullptr)
+    {
+        throw std::runtime_error("entry module not found: " + lookup_path);
+    }
+    module_loader_state_->RecordLoaded(*source);
+
+    const std::string module_name = NormalizeLookupPath(source->lookup_path);
+    JSValue compiled = JS_Eval(
+        context_,
+        source->source.c_str(),
+        source->source.size(),
+        module_name.c_str(),
+        JS_EVAL_TYPE_MODULE | JS_EVAL_FLAG_COMPILE_ONLY);
+    if(JS_IsException(compiled))
+    {
+        const std::string error = FormatException();
+        JS_FreeValue(context_, compiled);
+        throw std::runtime_error(error);
+    }
+
+    auto* module = static_cast<JSModuleDef*>(JS_VALUE_GET_PTR(compiled));
+    module_state_->module = compiled;
+    module_state_->module_def = module;
+    module_state_->evaluated = false;
+}
+
+void SignalBridgeJsRuntime::EvaluateModule()
+{
+    if(module_state_ == nullptr || JS_IsUndefined(module_state_->module))
+    {
+        return;
+    }
+
+    JSValue module = module_state_->module;
+    JSModuleDef* module_def = module_state_->module_def;
+    module_state_->module = JS_UNDEFINED;
+    JSValue result = JS_EvalFunction(context_, module);
+    if(JS_IsException(result))
+    {
+        const std::string error = FormatException();
+        JS_FreeValue(context_, result);
+        throw std::runtime_error(error);
+    }
+    JS_FreeValue(context_, result);
+
+    JS_FreeValue(context_, module_state_->namespace_object);
+    module_state_->namespace_object = JS_GetModuleNamespace(context_, module_def);
+    if(JS_IsException(module_state_->namespace_object))
+    {
+        const std::string error = FormatException();
+        JS_FreeValue(context_, module_state_->namespace_object);
+        module_state_->namespace_object = JS_UNDEFINED;
+        throw std::runtime_error(error);
+    }
+    module_state_->evaluated = true;
+}
+
 bool SignalBridgeJsRuntime::HasGlobal(const std::string& name) const
 {
     JSValue global = JS_GetGlobalObject(context_);
@@ -699,6 +1107,29 @@ bool SignalBridgeJsRuntime::HasGlobal(const std::string& name) const
     JS_FreeValue(context_, value);
     JS_FreeValue(context_, global);
     return found;
+}
+
+bool SignalBridgeJsRuntime::HasModuleExport(const std::string& name)
+{
+    if(module_state_ == nullptr || JS_IsUndefined(module_state_->namespace_object))
+    {
+        return false;
+    }
+
+    JSAtom atom = JS_NewAtom(context_, name.c_str());
+    if(atom == JS_ATOM_NULL)
+    {
+        FormatException();
+        return false;
+    }
+    const int has = JS_HasProperty(context_, module_state_->namespace_object, atom);
+    JS_FreeAtom(context_, atom);
+    if(has < 0)
+    {
+        FormatException();
+        return false;
+    }
+    return has != 0;
 }
 
 QJsonValue SignalBridgeJsRuntime::CallGlobalJson(const std::string& name, const QJsonArray& args)
@@ -759,6 +1190,64 @@ QJsonValue SignalBridgeJsRuntime::CallGlobalJson(const std::string& name, const 
     return json;
 }
 
+QJsonValue SignalBridgeJsRuntime::CallModuleExportJson(const std::string& name, const QJsonArray& args)
+{
+    if(module_state_ == nullptr || JS_IsUndefined(module_state_->namespace_object))
+    {
+        return QJsonValue();
+    }
+
+    JSValue function = JS_GetPropertyStr(context_, module_state_->namespace_object, name.c_str());
+    if(JS_IsException(function))
+    {
+        const std::string error = FormatException();
+        JS_FreeValue(context_, function);
+        throw std::runtime_error(error);
+    }
+    if(JS_IsUndefined(function))
+    {
+        JS_FreeValue(context_, function);
+        return QJsonValue();
+    }
+
+    std::vector<JSValue> js_args;
+    js_args.reserve(static_cast<std::size_t>(args.size()));
+    for(int idx = 0; idx < args.size(); idx++)
+    {
+        JSValue value = JsonToJsValue(context_, args.at(idx), "<arg>");
+        if(JS_IsException(value))
+        {
+            const std::string error = FormatException();
+            for(JSValue& existing : js_args)
+            {
+                JS_FreeValue(context_, existing);
+            }
+            JS_FreeValue(context_, value);
+            JS_FreeValue(context_, function);
+            throw std::runtime_error(error);
+        }
+        js_args.push_back(value);
+    }
+
+    JSValue result = JS_Call(context_, function, JS_UNDEFINED, static_cast<int>(js_args.size()), js_args.data());
+    for(JSValue& value : js_args)
+    {
+        JS_FreeValue(context_, value);
+    }
+    JS_FreeValue(context_, function);
+
+    if(JS_IsException(result))
+    {
+        const std::string error = FormatException();
+        JS_FreeValue(context_, result);
+        throw std::runtime_error(error);
+    }
+
+    const QJsonValue json = JsValueToJson(context_, result);
+    JS_FreeValue(context_, result);
+    return json;
+}
+
 void SignalBridgeJsRuntime::SetGlobalJson(const std::string& name, const QJsonValue& value)
 {
     JSValue global = JS_GetGlobalObject(context_);
@@ -802,10 +1291,31 @@ void SignalBridgeJsRuntime::ApplyConfiguration(const SignalBridgeScriptMeta& met
     }
 }
 
+std::vector<SignalBridgeScriptSource> SignalBridgeJsRuntime::LoadedModuleSources() const
+{
+    return module_loader_state_ != nullptr ? module_loader_state_->loaded_modules
+                                           : std::vector<SignalBridgeScriptSource>();
+}
+
+void SignalBridgeJsRuntime::ClearModuleState()
+{
+    if(context_ == nullptr || module_state_ == nullptr)
+    {
+        return;
+    }
+    JS_FreeValue(context_, module_state_->module);
+    JS_FreeValue(context_, module_state_->namespace_object);
+    module_state_->module = JS_UNDEFINED;
+    module_state_->namespace_object = JS_UNDEFINED;
+    module_state_->module_def = nullptr;
+    module_state_->evaluated = false;
+}
+
 void SignalBridgeJsRuntime::Reset()
 {
     if(context_ != nullptr)
     {
+        ClearModuleState();
         JS_SetContextOpaque(context_, nullptr);
         JS_FreeContext(context_);
         context_ = nullptr;
@@ -816,6 +1326,8 @@ void SignalBridgeJsRuntime::Reset()
         runtime_ = nullptr;
     }
     callback_state_.reset();
+    module_state_.reset();
+    module_loader_state_.reset();
 }
 
 void SignalBridgeJsRuntime::RegisterCallbacks()

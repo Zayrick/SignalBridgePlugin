@@ -3,6 +3,7 @@
 
 #include <cstddef>
 #include <functional>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -30,11 +31,7 @@ public:
         SignalBridgeScanProgressCallback progress_callback = {}) const;
 
 private:
-    SignalBridgeScriptMeta ScanScript(
-        const SignalBridgeScriptSource& script,
-        const std::vector<SignalBridgeScriptSource>& catalog) const;
-
-    std::string BundleScript(
+    std::optional<SignalBridgeScriptMeta> ScanScript(
         const SignalBridgeScriptSource& script,
         const std::vector<SignalBridgeScriptSource>& catalog) const;
 };

@@ -53,8 +53,12 @@ var Assert = {
     softIsDefined: function(v)    { return v !== undefined && v !== null; },
 };
 
+var __signalBridgeGlobalContextValues = Object.create(null);
 var globalContext = {
-    set: function() {},
+    set: function(key, value) { __signalBridgeGlobalContextValues[String(key)] = value; },
+    get: function(key) { return __signalBridgeGlobalContextValues[String(key)]; },
+    has: function(key) { return Object.prototype.hasOwnProperty.call(__signalBridgeGlobalContextValues, String(key)); },
+    clear: function(key) { delete __signalBridgeGlobalContextValues[String(key)]; },
 };
 
 // ─── @SignalRGB/DeviceDiscovery ────────────────────────────────

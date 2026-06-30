@@ -834,7 +834,7 @@ bool SignalBridgePlugin::ValidateScriptEndpoint(const SignalBridgeScriptMeta& me
 
         QJsonArray args;
         args.append(endpoint);
-        return runtime.CallGlobalJson("Validate", args).toBool(false);
+        return runtime.CallModuleExportJson("Validate", args).toBool(false);
     }
     catch(...)
     {

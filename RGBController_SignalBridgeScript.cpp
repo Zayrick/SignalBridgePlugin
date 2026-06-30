@@ -288,13 +288,13 @@ RGBController_SignalBridgeScript::~RGBController_SignalBridgeScript()
 {
     std::lock_guard<std::mutex> lock(mutex_);
     shutting_down_ = true;
-    if(runtime_ != nullptr && runtime_->HasGlobal("Shutdown"))
+    if(runtime_ != nullptr && runtime_->HasModuleExport("Shutdown"))
     {
         try
         {
             QJsonArray args;
             args.append(false);
-            runtime_->CallGlobalJson("Shutdown", args);
+            runtime_->CallModuleExportJson("Shutdown", args);
         }
         catch(...)
         {
@@ -367,9 +367,9 @@ void RGBController_SignalBridgeScript::DeviceUpdateLEDs()
         runtime_->SetGlobalJson("__srgb_subdevice_frames", subdevice_frames);
         runtime_->CallGlobalJson("__srgb_apply_pending_frames");
 
-        if(runtime_->HasGlobal("Render"))
+        if(runtime_->HasModuleExport("Render"))
         {
-            runtime_->CallGlobalJson("Render");
+            runtime_->CallModuleExportJson("Render");
         }
     }
     catch(...)
@@ -475,9 +475,9 @@ void RGBController_SignalBridgeScript::CreateRuntime()
 
 void RGBController_SignalBridgeScript::InitializeScript()
 {
-    if(runtime_->HasGlobal("Initialize"))
+    if(runtime_->HasModuleExport("Initialize"))
     {
-        runtime_->CallGlobalJson("Initialize");
+        runtime_->CallModuleExportJson("Initialize");
     }
 
     try

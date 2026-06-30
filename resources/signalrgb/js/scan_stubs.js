@@ -41,7 +41,13 @@ var Assert = {
     },
 };
 
-var globalContext = { set: function() {} };
+var __signalBridgeGlobalContextValues = Object.create(null);
+var globalContext = {
+    set: function(key, value) { __signalBridgeGlobalContextValues[String(key)] = value; },
+    get: function(key) { return __signalBridgeGlobalContextValues[String(key)]; },
+    has: function(key) { return Object.prototype.hasOwnProperty.call(__signalBridgeGlobalContextValues, String(key)); },
+    clear: function(key) { delete __signalBridgeGlobalContextValues[String(key)]; },
+};
 
 var DeviceDiscovery = {
     foundVirtualDevice: function() {},

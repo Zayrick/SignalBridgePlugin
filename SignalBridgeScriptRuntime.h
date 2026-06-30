@@ -41,7 +41,7 @@ struct SignalBridgeScriptMeta
     std::vector<std::pair<int, int>> led_positions;
     std::vector<QJsonObject> control_parameters;
     bool has_validate = false;
-    std::string js_source;
+    std::vector<SignalBridgeScriptSource> module_sources;
 };
 
 struct SignalBridgeEndpointDescriptor
@@ -52,6 +52,8 @@ struct SignalBridgeEndpointDescriptor
 };
 
 struct SignalBridgeJsCallbackState;
+struct SignalBridgeJsModuleState;
+struct SignalBridgeModuleLoaderState;
 
 class SignalBridgeJsRuntime
 {
@@ -77,16 +79,24 @@ public:
         QJsonObject configuration = QJsonObject());
 
     void Eval(const std::string& source, const std::string& name);
+    void LoadModule(
+        const std::string& lookup_path,
+        const std::vector<SignalBridgeScriptSource>& catalog);
+    void EvaluateModule();
     bool HasGlobal(const std::string& name) const;
+    bool HasModuleExport(const std::string& name);
     QJsonValue CallGlobalJson(const std::string& name, const QJsonArray& args = QJsonArray());
+    QJsonValue CallModuleExportJson(const std::string& name, const QJsonArray& args = QJsonArray());
     void SetGlobalJson(const std::string& name, const QJsonValue& value);
     void ApplyConfigurationValues(const QJsonObject& configuration);
     void ApplyConfiguration(const SignalBridgeScriptMeta& meta, const QJsonObject& configuration);
+    std::vector<SignalBridgeScriptSource> LoadedModuleSources() const;
 
 private:
     explicit SignalBridgeJsRuntime(bool create_context);
 
     void Reset();
+    void ClearModuleState();
     void RegisterCallbacks();
     void ApplyStaticMetadata(const SignalBridgeScriptMeta& meta);
 
@@ -95,6 +105,8 @@ private:
     JSRuntime* runtime_ = nullptr;
     JSContext* context_ = nullptr;
     std::unique_ptr<SignalBridgeJsCallbackState> callback_state_;
+    std::unique_ptr<SignalBridgeJsModuleState> module_state_;
+    std::unique_ptr<SignalBridgeModuleLoaderState> module_loader_state_;
 };
 
 #endif // SIGNALBRIDGESCRIPTRUNTIME_H
