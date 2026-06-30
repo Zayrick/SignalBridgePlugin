@@ -75,6 +75,63 @@ std::vector<std::string> ExtractNames(const QJsonValue& value)
     return names;
 }
 
+std::string Trim(const std::string& value)
+{
+    const auto first = std::find_if_not(value.begin(), value.end(), [](unsigned char ch) {
+        return std::isspace(ch) != 0;
+    });
+    if(first == value.end())
+    {
+        return {};
+    }
+
+    const auto last = std::find_if_not(value.rbegin(), value.rend(), [](unsigned char ch) {
+        return std::isspace(ch) != 0;
+    }).base();
+    return std::string(first, last);
+}
+
+bool StartsWithKeyPrefix(const std::string& value)
+{
+    constexpr const char* prefix = "key:";
+    constexpr std::size_t prefix_size = 4;
+    if(value.size() < prefix_size)
+    {
+        return false;
+    }
+
+    for(std::size_t idx = 0; idx < prefix_size; idx++)
+    {
+        if(std::tolower(static_cast<unsigned char>(value[idx])) != prefix[idx])
+        {
+            return false;
+        }
+    }
+    return true;
+}
+
+std::string OpenRgbLedName(device_type type, const std::string& raw_name)
+{
+    const std::string name = Trim(raw_name);
+    if(name.empty())
+    {
+        return {};
+    }
+
+    if(type != DEVICE_TYPE_KEYBOARD && type != DEVICE_TYPE_KEYPAD)
+    {
+        return name;
+    }
+
+    if(StartsWithKeyPrefix(name))
+    {
+        const std::string key_name = Trim(name.substr(4));
+        return key_name.empty() ? std::string() : "Key: " + key_name;
+    }
+
+    return "Key: " + name;
+}
+
 std::vector<QJsonObject> ExtractControlParameters(const QJsonValue& value)
 {
     std::vector<QJsonObject> result;
@@ -483,9 +540,14 @@ void RGBController_SignalBridgeScript::BuildZonesFromTopology(const QJsonObject&
     {
         const unsigned int led_count = std::max(1u, main_led_count > 0 ? main_led_count : canvas_led_count);
         std::vector<std::pair<int, int>> positions = ExtractPositions(main.value("led_positions"));
+        std::vector<std::string> names = ExtractNames(main.value("led_names"));
         if(positions.empty())
         {
             positions = meta_.led_positions;
+        }
+        if(names.empty())
+        {
+            names = meta_.led_names;
         }
 
         ZoneTarget target;
@@ -494,6 +556,7 @@ void RGBController_SignalBridgeScript::BuildZonesFromTopology(const QJsonObject&
         target.width = main_width;
         target.height = main_height;
         target.matrix_map = BuildMatrixMap(main_width, main_height, led_count, positions);
+        target.led_names = std::move(names);
 
         zone main_zone;
         main_zone.name = has_dynamic_outputs ? "Main" : name;
@@ -554,6 +617,7 @@ void RGBController_SignalBridgeScript::BuildZonesFromTopology(const QJsonObject&
         target.width = sub_width;
         target.height = sub_height;
         target.matrix_map = BuildMatrixMap(sub_width, sub_height, led_count, positions);
+        target.led_names = names;
 
         zone sub_zone;
         sub_zone.name = display_name;
@@ -598,9 +662,9 @@ void RGBController_SignalBridgeScript::RebuildLedList()
         {
             led item;
             item.value = static_cast<unsigned int>(leds.size());
-            if(target.kind == ZoneTarget::Kind::Main && led_idx < meta_.led_names.size())
+            if(led_idx < target.led_names.size() && !target.led_names[led_idx].empty())
             {
-                item.name = meta_.led_names[led_idx];
+                item.name = OpenRgbLedName(type, target.led_names[led_idx]);
             }
             else
             {

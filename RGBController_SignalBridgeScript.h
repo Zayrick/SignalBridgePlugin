@@ -54,6 +54,7 @@ private:
         unsigned int width = 1;
         unsigned int height = 1;
         std::vector<int> matrix_map;
+        std::vector<std::string> led_names;
     };
 
     void OpenEndpoints();
