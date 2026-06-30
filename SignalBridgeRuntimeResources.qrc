@@ -1,0 +1,7 @@
+<RCC>
+    <qresource prefix="/SignalBridge">
+        <file alias="js/device.js">resources/signalrgb/js/device.js</file>
+        <file alias="js/polyfills.js">resources/signalrgb/js/polyfills.js</file>
+        <file alias="js/scan_stubs.js">resources/signalrgb/js/scan_stubs.js</file>
+    </qresource>
+</RCC>
