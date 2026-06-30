@@ -34,28 +34,74 @@ unset(_SIGNALBRIDGE_AUTOUIC)
 unset(_SIGNALBRIDGE_AUTOMOC)
 unset(_SIGNALBRIDGE_AUTORCC)
 
-set(TS_FILES SignalBridgePlugin_en_US.ts)
+set(TS_FILES translations/SignalBridgePlugin_en_US.ts)
 
-add_library(SignalBridgePlugin SHARED
+add_library(SignalBridgePlugin SHARED)
+
+target_sources(SignalBridgePlugin PRIVATE
   OpenRGB/RGBController/RGBController.cpp
-  RGBController_SignalBridgeScript.cpp
-  RGBController_SignalBridgeScript.h
-  SignalBridgeScriptScanner.cpp
-  SignalBridgeScriptScanner.h
-  SignalBridgeScriptRuntime.cpp
-  SignalBridgeScriptRuntime.h
-  SignalBridgeRuntimeResources.qrc
-  SignalBridgePlugin_global.h
-  SignalBridgePlugin.cpp
-  SignalBridgePlugin.h
-  SignalBridgeHid.cpp
-  SignalBridgeHid.h
+  resources/SignalBridgeResources.qrc
+  include/SignalBridge/SignalBridgePlugin.h
+  include/SignalBridge/SignalBridgePlugin_global.h
+  src/SignalBridgePlugin.cpp
+  src/config/DeviceConfigStore.cpp
+  src/config/DeviceConfigStore.h
+  src/discovery/ControllerRegistry.cpp
+  src/discovery/ControllerRegistry.h
+  src/discovery/DiscoveryService.cpp
+  src/discovery/DiscoveryService.h
+  src/domain/ControlParameters.cpp
+  src/domain/ControlParameters.h
+  src/domain/DeviceRecords.cpp
+  src/domain/DeviceRecords.h
+  src/domain/PathUtils.cpp
+  src/domain/PathUtils.h
+  src/domain/ScriptTypes.h
+  src/hid/HidBackend.cpp
+  src/hid/HidBackend.h
+  src/hid/HidTypes.h
+  src/openrgb/DeviceTypeMapper.cpp
+  src/openrgb/DeviceTypeMapper.h
+  src/openrgb/EndpointSession.cpp
+  src/openrgb/EndpointSession.h
+  src/openrgb/FrameBuilder.cpp
+  src/openrgb/FrameBuilder.h
+  src/openrgb/SignalBridgeController.cpp
+  src/openrgb/SignalBridgeController.h
+  src/openrgb/TopologyMapper.cpp
+  src/openrgb/TopologyMapper.h
+  src/runtime/BuiltinModules.cpp
+  src/runtime/BuiltinModules.h
+  src/runtime/ModuleLoader.cpp
+  src/runtime/ModuleLoader.h
+  src/runtime/QuickJsRuntime.cpp
+  src/runtime/QuickJsRuntime.h
+  src/runtime/QuickJsValue.cpp
+  src/runtime/QuickJsValue.h
+  src/runtime/RuntimeBindings.cpp
+  src/runtime/RuntimeBindings.h
+  src/runtime/SignalRgbRuntimeFactory.cpp
+  src/runtime/SignalRgbRuntimeFactory.h
+  src/scanning/ScriptMetadataExtractor.cpp
+  src/scanning/ScriptMetadataExtractor.h
+  src/scanning/ScriptScanner.cpp
+  src/scanning/ScriptScanner.h
+  src/ui/DeviceConfigPageFactory.cpp
+  src/ui/DeviceConfigPageFactory.h
+  src/ui/LogBuffer.cpp
+  src/ui/LogBuffer.h
+  src/ui/ScriptTableView.cpp
+  src/ui/ScriptTableView.h
+  src/ui/SignalBridgeWidget.cpp
+  src/ui/SignalBridgeWidget.h
   ${TS_FILES}
 )
 
 target_link_libraries(SignalBridgePlugin PRIVATE Qt${QT_VERSION_MAJOR}::Widgets hidapi::hidapi qjs)
 
 target_include_directories(SignalBridgePlugin PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+    ${CMAKE_CURRENT_SOURCE_DIR}/src
     ${CMAKE_CURRENT_SOURCE_DIR}/OpenRGB
     ${CMAKE_CURRENT_SOURCE_DIR}/OpenRGB/i2c_smbus
 )
@@ -66,8 +112,56 @@ target_compile_definitions(SignalBridgePlugin PRIVATE
     SIGNALBRIDGEPLUGIN_COMMIT=""
 )
 
+if(MSVC)
+    target_compile_options(SignalBridgePlugin PRIVATE /FS)
+endif()
+
 if(COMMAND qt_create_translation)
     qt_create_translation(QM_FILES ${CMAKE_SOURCE_DIR} ${TS_FILES})
 else()
     qt5_create_translation(QM_FILES ${CMAKE_SOURCE_DIR} ${TS_FILES})
+endif()
+
+option(SIGNALBRIDGE_BUILD_TESTS "Build SignalBridge focused core tests" ON)
+
+if(SIGNALBRIDGE_BUILD_TESTS)
+    enable_testing()
+
+    add_executable(SignalBridgeCoreTests)
+    target_sources(SignalBridgeCoreTests PRIVATE
+        OpenRGB/RGBController/RGBController.cpp
+        tests/SignalBridgeCoreTests.cpp
+        src/config/DeviceConfigStore.cpp
+        src/config/DeviceConfigStore.h
+        src/domain/ControlParameters.cpp
+        src/domain/ControlParameters.h
+        src/domain/DeviceRecords.cpp
+        src/domain/DeviceRecords.h
+        src/domain/PathUtils.cpp
+        src/domain/PathUtils.h
+        src/domain/ScriptTypes.h
+        src/hid/HidBackend.cpp
+        src/hid/HidBackend.h
+        src/hid/HidTypes.h
+        src/openrgb/FrameBuilder.cpp
+        src/openrgb/FrameBuilder.h
+        src/openrgb/TopologyMapper.cpp
+        src/openrgb/TopologyMapper.h
+    )
+    target_link_libraries(SignalBridgeCoreTests PRIVATE Qt${QT_VERSION_MAJOR}::Widgets hidapi::hidapi)
+    if(MSVC)
+        target_compile_options(SignalBridgeCoreTests PRIVATE /FS)
+    endif()
+    target_include_directories(SignalBridgeCoreTests PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/include
+        ${CMAKE_CURRENT_SOURCE_DIR}/src
+        ${CMAKE_CURRENT_SOURCE_DIR}/OpenRGB
+        ${CMAKE_CURRENT_SOURCE_DIR}/OpenRGB/i2c_smbus
+    )
+    add_test(
+        NAME SignalBridgeCoreTests
+        COMMAND ${CMAKE_COMMAND} -E env
+            "PATH=$<TARGET_FILE_DIR:Qt${QT_VERSION_MAJOR}::Core>$<SEMICOLON>$ENV{PATH}"
+            $<TARGET_FILE:SignalBridgeCoreTests>
+    )
 endif()

@@ -1,0 +1,303 @@
+#include "openrgb/SignalBridgeController.h"
+
+#include <algorithm>
+#include <cctype>
+#include <stdexcept>
+#include <utility>
+
+#include <QByteArray>
+#include <QJsonArray>
+#include <QJsonObject>
+
+#include "domain/ControlParameters.h"
+#include "openrgb/DeviceTypeMapper.h"
+#include "openrgb/FrameBuilder.h"
+#include "runtime/SignalRgbRuntimeFactory.h"
+
+namespace signalbridge
+{
+namespace
+{
+std::string FirstWord(const std::string& value)
+{
+    const auto first = std::find_if_not(value.begin(), value.end(), [](unsigned char ch) {
+        return std::isspace(ch) != 0;
+    });
+    const auto last = std::find_if(first, value.end(), [](unsigned char ch) {
+        return std::isspace(ch) != 0;
+    });
+    return first == value.end() ? std::string("SignalRGB") : std::string(first, last);
+}
+}
+
+SignalBridgeController::SignalBridgeController(
+    std::shared_ptr<HidBackend> hid_backend,
+    ScriptMeta meta,
+    HidInfo primary_hid,
+    QJsonObject configuration,
+    std::string config_key,
+    ScriptLogCallback log_callback)
+    : hid_backend_(std::move(hid_backend))
+    , meta_(std::move(meta))
+    , primary_hid_(std::move(primary_hid))
+    , configuration_(std::move(configuration))
+    , config_key_(std::move(config_key))
+    , log_callback_(std::move(log_callback))
+{
+    if(config_key_.empty())
+    {
+        config_key_ = meta_.lookup_path.empty() ? meta_.source_path : meta_.lookup_path;
+    }
+
+    name = meta_.name;
+    vendor = meta_.publisher.empty() ? FirstWord(meta_.name) : meta_.publisher;
+    description = "SignalRGB script device";
+    version = "SignalRGB Bridge";
+    serial = primary_hid_.serial;
+    location = primary_hid_.path;
+    type = ResolveOpenRgbDeviceType(meta_.device_type);
+    flags = CONTROLLER_FLAG_LOCAL;
+
+    mode direct;
+    direct.name = "Direct";
+    direct.value = 0;
+    direct.flags = MODE_FLAG_HAS_PER_LED_COLOR;
+    direct.color_mode = MODE_COLORS_PER_LED;
+    modes.push_back(direct);
+    active_mode = 0;
+
+    endpoint_session_ = std::make_unique<EndpointSession>(hid_backend_, primary_hid_);
+    CreateRuntime();
+    InitializeScript();
+    SetupColors();
+}
+
+SignalBridgeController::~SignalBridgeController()
+{
+    std::lock_guard<std::mutex> lock(mutex_);
+    shutting_down_ = true;
+    if(runtime_ != nullptr && runtime_->HasModuleExport("Shutdown"))
+    {
+        try
+        {
+            QJsonArray args;
+            args.append(false);
+            runtime_->CallModuleExportJson("Shutdown", args);
+        }
+        catch(...)
+        {
+        }
+    }
+    runtime_.reset();
+    endpoint_session_.reset();
+    DeleteZoneMaps(zones);
+}
+
+void SignalBridgeController::SetupZones()
+{
+}
+
+void SignalBridgeController::ResizeZone(int zone_index, int new_size)
+{
+    std::lock_guard<std::mutex> lock(mutex_);
+    if(zone_index < 0 || static_cast<std::size_t>(zone_index) >= zones.size())
+    {
+        return;
+    }
+    zone& target_zone = zones[static_cast<std::size_t>(zone_index)];
+    const unsigned int clamped = static_cast<unsigned int>(std::clamp(
+        new_size,
+        static_cast<int>(target_zone.leds_min),
+        static_cast<int>(target_zone.leds_max)));
+    if(target_zone.leds_count == clamped)
+    {
+        return;
+    }
+    target_zone.leds_count = clamped;
+    RebuildOpenRgbLedList(zones, zone_targets_, type, leds, led_alt_names);
+    SetupColors();
+}
+
+void SignalBridgeController::DeviceUpdateLEDs()
+{
+    std::lock_guard<std::mutex> lock(mutex_);
+    if(shutting_down_ || runtime_ == nullptr)
+    {
+        return;
+    }
+
+    try
+    {
+        QJsonObject main_frame;
+        QJsonObject channel_frames;
+        QJsonObject subdevice_frames;
+
+        for(std::size_t zone_idx = 0; zone_idx < zones.size() && zone_idx < zone_targets_.size(); zone_idx++)
+        {
+            const ZoneTarget& target = zone_targets_[zone_idx];
+            const QJsonObject frame = BuildFrameForZone(zones, colors, static_cast<unsigned int>(zone_idx), target);
+            switch(target.kind)
+            {
+            case ZoneTarget::Kind::Main:
+                main_frame = frame;
+                break;
+            case ZoneTarget::Kind::Channel:
+                channel_frames.insert(QString::fromStdString(target.key), frame);
+                break;
+            case ZoneTarget::Kind::Subdevice:
+                subdevice_frames.insert(QString::fromStdString(target.key), frame);
+                break;
+            }
+        }
+
+        runtime_->SetGlobalJson("__srgb_main_frame", main_frame);
+        runtime_->SetGlobalJson("__srgb_channel_frames", channel_frames);
+        runtime_->SetGlobalJson("__srgb_subdevice_frames", subdevice_frames);
+        runtime_->CallGlobalJson("__srgb_apply_pending_frames");
+
+        if(runtime_->HasModuleExport("Render"))
+        {
+            runtime_->CallModuleExportJson("Render");
+        }
+    }
+    catch(...)
+    {
+    }
+}
+
+void SignalBridgeController::UpdateZoneLEDs(int)
+{
+    DeviceUpdateLEDs();
+}
+
+void SignalBridgeController::UpdateSingleLED(int)
+{
+    DeviceUpdateLEDs();
+}
+
+void SignalBridgeController::SetCustomMode()
+{
+    active_mode = 0;
+}
+
+void SignalBridgeController::DeviceUpdateMode()
+{
+}
+
+const std::string& SignalBridgeController::SourcePath() const
+{
+    return meta_.source_path;
+}
+
+const std::string& SignalBridgeController::ConfigKey() const
+{
+    return config_key_;
+}
+
+const ScriptMeta& SignalBridgeController::ScriptMetadata() const
+{
+    return meta_;
+}
+
+void SignalBridgeController::SetConfiguration(QJsonObject configuration)
+{
+    std::lock_guard<std::mutex> lock(mutex_);
+    configuration_ = std::move(configuration);
+    ApplyConfigurationToRuntime();
+}
+
+void SignalBridgeController::SetConfigurationValue(const QString& property, const QJsonValue& value)
+{
+    std::lock_guard<std::mutex> lock(mutex_);
+    configuration_.insert(property, value);
+    ApplyConfigurationToRuntime(property);
+}
+
+void SignalBridgeController::ApplyConfigurationToRuntime(const QString& changed_property)
+{
+    if(runtime_ != nullptr)
+    {
+        try
+        {
+            runtime_->ApplyConfiguration(meta_, configuration_);
+        }
+        catch(const std::exception& err)
+        {
+            if(log_callback_)
+            {
+                std::string message = "Failed to apply configuration";
+                if(!changed_property.isEmpty())
+                {
+                    const QByteArray property = changed_property.toUtf8();
+                    message += " \"";
+                    message += property.constData();
+                    message += "\"";
+                }
+                message += ": ";
+                message += err.what();
+                log_callback_(meta_.lookup_path.empty() ? meta_.source_path : meta_.lookup_path, message);
+            }
+        }
+        catch(...)
+        {
+            if(log_callback_)
+            {
+                std::string message = "Failed to apply configuration";
+                if(!changed_property.isEmpty())
+                {
+                    const QByteArray property = changed_property.toUtf8();
+                    message += " \"";
+                    message += property.constData();
+                    message += "\"";
+                }
+                message += ": unknown error";
+                log_callback_(meta_.lookup_path.empty() ? meta_.source_path : meta_.lookup_path, message);
+            }
+        }
+    }
+}
+
+void SignalBridgeController::CreateRuntime()
+{
+    runtime_ = std::make_unique<QuickJsRuntime>(SignalRgbRuntimeFactory::CreateDeviceRuntime(
+        hid_backend_,
+        meta_,
+        endpoint_session_->PrimaryHandle(),
+        primary_hid_,
+        endpoint_session_->Handles(),
+        endpoint_session_->Endpoints(),
+        configuration_,
+        log_callback_));
+}
+
+void SignalBridgeController::InitializeScript()
+{
+    if(runtime_->HasModuleExport("Initialize"))
+    {
+        runtime_->CallModuleExportJson("Initialize");
+    }
+
+    try
+    {
+        MergeControlParameters(meta_.control_parameters, runtime_->CallGlobalJson("__srgb_export_properties"));
+        runtime_->ApplyConfiguration(meta_, configuration_);
+    }
+    catch(...)
+    {
+    }
+
+    QJsonArray args;
+    args.append(true);
+    BuildZonesFromTopology(runtime_->CallGlobalJson("__srgb_take_topology_update", args).toObject());
+}
+
+void SignalBridgeController::BuildZonesFromTopology(const QJsonObject& topology)
+{
+    DeleteZoneMaps(zones);
+    TopologyResult mapped = BuildOpenRgbTopology(topology, meta_, name);
+    name = mapped.controller_name;
+    zones = std::move(mapped.zones);
+    zone_targets_ = std::move(mapped.targets);
+    RebuildOpenRgbLedList(zones, zone_targets_, type, leds, led_alt_names);
+}
+}

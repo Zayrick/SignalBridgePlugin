@@ -1,4 +1,4 @@
-#include "SignalBridgeHid.h"
+#include "hid/HidBackend.h"
 
 #include <algorithm>
 #include <cctype>
@@ -7,6 +7,8 @@
 
 #include <QString>
 
+namespace signalbridge
+{
 namespace
 {
 std::string WideToUtf8(const wchar_t* value)
@@ -51,9 +53,9 @@ std::optional<std::string> InstanceKey(const std::string& path)
     return path.substr(second + 1, third == std::string::npos ? std::string::npos : third - second - 1);
 }
 
-SignalBridgeHidInfo FromDeviceInfo(const hid_device_info* device)
+HidInfo FromDeviceInfo(const hid_device_info* device)
 {
-    SignalBridgeHidInfo info;
+    HidInfo info;
     info.path = device->path != nullptr ? device->path : "";
     info.vid = device->vendor_id;
     info.pid = device->product_id;
@@ -67,7 +69,7 @@ SignalBridgeHidInfo FromDeviceInfo(const hid_device_info* device)
 }
 }
 
-SignalBridgeHidBackend::SignalBridgeHidBackend()
+HidBackend::HidBackend()
 {
     if(hid_init() != 0)
     {
@@ -75,20 +77,20 @@ SignalBridgeHidBackend::SignalBridgeHidBackend()
     }
 }
 
-SignalBridgeHidBackend::~SignalBridgeHidBackend()
+HidBackend::~HidBackend()
 {
     CloseAll();
     hid_exit();
 }
 
-std::vector<SignalBridgeHidInfo> SignalBridgeHidBackend::Enumerate(std::optional<std::uint16_t> vid,
-                                                                   std::optional<std::uint16_t> pid) const
+std::vector<HidInfo> HidBackend::Enumerate(std::optional<std::uint16_t> vid,
+                                           std::optional<std::uint16_t> pid) const
 {
     const unsigned short vid_filter = vid.value_or(0);
     const unsigned short pid_filter = pid.value_or(0);
     std::lock_guard<std::mutex> lock(mutex_);
     hid_device_info* head = hid_enumerate(vid_filter, pid_filter);
-    std::vector<SignalBridgeHidInfo> devices;
+    std::vector<HidInfo> devices;
 
     for(const hid_device_info* current = head; current != nullptr; current = current->next)
     {
@@ -99,7 +101,7 @@ std::vector<SignalBridgeHidInfo> SignalBridgeHidBackend::Enumerate(std::optional
     return devices;
 }
 
-SignalBridgeHidBackend::Handle SignalBridgeHidBackend::OpenPath(const std::string& path)
+HidBackend::Handle HidBackend::OpenPath(const std::string& path)
 {
     std::lock_guard<std::mutex> lock(mutex_);
     hid_device* device = hid_open_path(path.c_str());
@@ -111,7 +113,7 @@ SignalBridgeHidBackend::Handle SignalBridgeHidBackend::OpenPath(const std::strin
     return StoreDeviceLocked(device);
 }
 
-void SignalBridgeHidBackend::Close(Handle handle)
+void HidBackend::Close(Handle handle)
 {
     hid_device* device = nullptr;
     {
@@ -129,7 +131,7 @@ void SignalBridgeHidBackend::Close(Handle handle)
     hid_close(device);
 }
 
-void SignalBridgeHidBackend::CloseAll()
+void HidBackend::CloseAll()
 {
     std::unordered_map<Handle, hid_device*> devices;
     {
@@ -143,7 +145,7 @@ void SignalBridgeHidBackend::CloseAll()
     }
 }
 
-std::size_t SignalBridgeHidBackend::Write(Handle handle, const std::vector<std::uint8_t>& data)
+std::size_t HidBackend::Write(Handle handle, const std::vector<std::uint8_t>& data)
 {
     if(data.empty())
     {
@@ -161,7 +163,7 @@ std::size_t SignalBridgeHidBackend::Write(Handle handle, const std::vector<std::
     return static_cast<std::size_t>(written);
 }
 
-std::vector<std::uint8_t> SignalBridgeHidBackend::Read(Handle handle, std::size_t length, int timeout_ms)
+std::vector<std::uint8_t> HidBackend::Read(Handle handle, std::size_t length, int timeout_ms)
 {
     if(length == 0)
     {
@@ -183,7 +185,7 @@ std::vector<std::uint8_t> SignalBridgeHidBackend::Read(Handle handle, std::size_
     return buffer;
 }
 
-std::size_t SignalBridgeHidBackend::SendFeatureReport(Handle handle, const std::vector<std::uint8_t>& data)
+std::size_t HidBackend::SendFeatureReport(Handle handle, const std::vector<std::uint8_t>& data)
 {
     if(data.empty())
     {
@@ -201,7 +203,7 @@ std::size_t SignalBridgeHidBackend::SendFeatureReport(Handle handle, const std::
     return static_cast<std::size_t>(written);
 }
 
-std::vector<std::uint8_t> SignalBridgeHidBackend::GetFeatureReport(Handle handle, std::uint8_t report_id, std::size_t length)
+std::vector<std::uint8_t> HidBackend::GetFeatureReport(Handle handle, std::uint8_t report_id, std::size_t length)
 {
     if(length == 0)
     {
@@ -223,7 +225,7 @@ std::vector<std::uint8_t> SignalBridgeHidBackend::GetFeatureReport(Handle handle
     return buffer;
 }
 
-std::size_t SignalBridgeHidBackend::Flush(Handle handle, std::size_t max_reads)
+std::size_t HidBackend::Flush(Handle handle, std::size_t max_reads)
 {
     std::size_t flushed = 0;
     std::vector<std::uint8_t> buffer(1024);
@@ -247,17 +249,17 @@ std::size_t SignalBridgeHidBackend::Flush(Handle handle, std::size_t max_reads)
     return flushed;
 }
 
-std::vector<SignalBridgeHidInfo> SignalBridgeHidBackend::CollectEndpoints(const SignalBridgeHidInfo& primary) const
+std::vector<HidInfo> HidBackend::CollectEndpoints(const HidInfo& primary) const
 {
     const std::string group = NormalizeDevicePath(primary.path);
-    std::vector<SignalBridgeHidInfo> endpoints;
+    std::vector<HidInfo> endpoints;
     endpoints.push_back(primary);
 
-    const std::vector<SignalBridgeHidInfo> devices = Enumerate(primary.vid, primary.pid);
-    for(const SignalBridgeHidInfo& device : devices)
+    const std::vector<HidInfo> devices = Enumerate(primary.vid, primary.pid);
+    for(const HidInfo& device : devices)
     {
         const bool same_group = !group.empty() && NormalizeDevicePath(device.path) == group;
-        const bool already_added = std::any_of(endpoints.begin(), endpoints.end(), [&](const SignalBridgeHidInfo& endpoint) {
+        const bool already_added = std::any_of(endpoints.begin(), endpoints.end(), [&](const HidInfo& endpoint) {
             return EndpointKey(endpoint) == EndpointKey(device);
         });
 
@@ -270,14 +272,14 @@ std::vector<SignalBridgeHidInfo> SignalBridgeHidBackend::CollectEndpoints(const 
     return endpoints;
 }
 
-std::string SignalBridgeHidBackend::EndpointKey(const SignalBridgeHidInfo& info)
+std::string HidBackend::EndpointKey(const HidInfo& info)
 {
     return std::to_string(info.interface_number.value_or(0)) + ":" +
            std::to_string(info.usage.value_or(0)) + ":" +
            std::to_string(info.usage_page.value_or(0));
 }
 
-std::string SignalBridgeHidBackend::NormalizeDevicePath(const std::string& path)
+std::string HidBackend::NormalizeDevicePath(const std::string& path)
 {
     const std::string upper = ToUpperAscii(path);
     const std::size_t vid_pos = upper.find("VID_");
@@ -309,7 +311,7 @@ std::string SignalBridgeHidBackend::NormalizeDevicePath(const std::string& path)
     return vid_pid;
 }
 
-std::string SignalBridgeHidBackend::MakeControllerPort(const SignalBridgeHidInfo& info)
+std::string HidBackend::MakeControllerPort(const HidInfo& info)
 {
     const std::string id = !info.serial.empty() ? info.serial : info.path;
     char buffer[32];
@@ -317,7 +319,7 @@ std::string SignalBridgeHidBackend::MakeControllerPort(const SignalBridgeHidInfo
     return std::string(buffer) + id;
 }
 
-hid_device* SignalBridgeHidBackend::DeviceLocked(Handle handle) const
+hid_device* HidBackend::DeviceLocked(Handle handle) const
 {
     const auto it = devices_.find(handle);
     if(it == devices_.end())
@@ -328,7 +330,7 @@ hid_device* SignalBridgeHidBackend::DeviceLocked(Handle handle) const
     return it->second;
 }
 
-SignalBridgeHidBackend::Handle SignalBridgeHidBackend::StoreDeviceLocked(hid_device* device)
+HidBackend::Handle HidBackend::StoreDeviceLocked(hid_device* device)
 {
     if(next_handle_ == 0)
     {
@@ -338,4 +340,5 @@ SignalBridgeHidBackend::Handle SignalBridgeHidBackend::StoreDeviceLocked(hid_dev
     const Handle handle = next_handle_++;
     devices_.insert({ handle, device });
     return handle;
+}
 }
