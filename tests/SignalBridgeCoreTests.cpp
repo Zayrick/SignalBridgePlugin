@@ -172,6 +172,43 @@ QJsonValue RuntimeGlobal(signalbridge::QuickJsRuntime& runtime, const QString& n
     return runtime.CallGlobalJson("__test_get", args);
 }
 
+bool TestSystemInfoModule()
+{
+    using namespace signalbridge;
+
+    const std::string lookup = "systeminfo-test.js";
+    const std::string source = R"JS(
+import systeminfo, { systeminfo as namedSysteminfo } from "@SignalRGB/systeminfo";
+export function ReadSystemInfo() {
+    return {
+        sameExport: systeminfo === namedSysteminfo,
+        motherboard: systeminfo.GetMotherboardInfo(),
+        bios: systeminfo.GetBiosInfo(),
+    };
+}
+)JS";
+
+    QuickJsRuntime runtime = SignalRgbRuntimeFactory::CreateScan();
+    runtime.LoadModule(lookup, { ScriptSource{ lookup, lookup, source } });
+    runtime.EvaluateModule();
+
+    const QJsonObject info = runtime.CallModuleExportJson("ReadSystemInfo").toObject();
+    const QJsonObject motherboard = info.value("motherboard").toObject();
+    const QJsonObject bios = info.value("bios").toObject();
+
+    const QByteArray motherboard_json = QJsonDocument(motherboard).toJson(QJsonDocument::Compact);
+    const QByteArray bios_json = QJsonDocument(bios).toJson(QJsonDocument::Compact);
+    std::cout << "SystemInfo motherboard: " << motherboard_json.constData() << '\n';
+    std::cout << "SystemInfo bios: " << bios_json.constData() << '\n';
+
+    return Check(info.value("sameExport").toBool(false), "systeminfo default and named exports share implementation") &&
+           Check(motherboard.contains("model"), "motherboard info exposes model field") &&
+           Check(motherboard.contains("manufacturer"), "motherboard info exposes manufacturer field") &&
+           Check(motherboard.contains("product"), "motherboard info exposes product field") &&
+           Check(motherboard.contains("vendor"), "motherboard info exposes vendor field") &&
+           Check(bios.contains("releaseDate"), "bios info exposes SignalRGB releaseDate field");
+}
+
 bool TestRuntimeConfigurationCallbacks()
 {
     using namespace signalbridge;
@@ -301,6 +338,7 @@ int main()
     ok = TestPathUtils() && ok;
     ok = TestControlParameters() && ok;
     ok = TestDeviceConfigStore() && ok;
+    ok = TestSystemInfoModule() && ok;
     ok = TestRuntimeConfigurationCallbacks() && ok;
     ok = TestTopologyAndFrame() && ok;
     if(ok)

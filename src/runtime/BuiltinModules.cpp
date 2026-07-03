@@ -72,7 +72,7 @@ export default permissionsExport;
 constexpr const char* kSystemInfoModuleJs = R"JS(
 const systeminfoExport = globalThis.systeminfo || {
     GetMotherboardInfo: function() { return { model: "", manufacturer: "", product: "", vendor: "" }; },
-    GetBiosInfo: function() { return { vendor: "", version: "", date: "" }; },
+    GetBiosInfo: function() { return { vendor: "", version: "", date: "", releaseDate: "" }; },
     GetRamInfo: function() { return { totalMemory: 0, modules: [] }; },
 };
 export { systeminfoExport as systeminfo };

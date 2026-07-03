@@ -7,8 +7,12 @@
 #include <stdexcept>
 #include <thread>
 
+#include <QDate>
 #include <QJsonArray>
 #include <QJsonObject>
+#include <QSettings>
+#include <QStringList>
+#include <QVariant>
 
 #include "runtime/QuickJsValue.h"
 
@@ -31,6 +35,194 @@ std::string FindEndpointHandleKey(int interface_number, int usage, int usage_pag
 bool UsagePagesCompatible(int a, int b)
 {
     return a == b || (a >= 0xFF00 && b >= 0xFF00);
+}
+
+QString ReadSettingsString(QSettings& settings, const char* key)
+{
+    const QVariant value = settings.value(QString::fromLatin1(key));
+    if(!value.isValid() || value.isNull())
+    {
+        return QString();
+    }
+
+    QString text = value.toString().trimmed();
+    if(!text.isEmpty())
+    {
+        return text;
+    }
+
+    const QStringList values = value.toStringList();
+    for(const QString& item : values)
+    {
+        const QString trimmed = item.trimmed();
+        if(!trimmed.isEmpty())
+        {
+            if(!text.isEmpty())
+            {
+                text += QStringLiteral(" ");
+            }
+            text += trimmed;
+        }
+    }
+    return text;
+}
+
+QString NormalizeBiosDate(const QString& raw)
+{
+    const QString text = raw.trimmed();
+    if(text.isEmpty())
+    {
+        return QString();
+    }
+
+    if(text.size() >= 8)
+    {
+        bool digits = true;
+        for(int idx = 0; idx < 8; idx++)
+        {
+            if(!text.at(idx).isDigit())
+            {
+                digits = false;
+                break;
+            }
+        }
+        if(digits)
+        {
+            const QDate date = QDate::fromString(text.left(8), QStringLiteral("yyyyMMdd"));
+            if(date.isValid())
+            {
+                return date.toString(Qt::ISODate);
+            }
+        }
+    }
+
+    const QStringList formats = {
+        QStringLiteral("MM/dd/yyyy"),
+        QStringLiteral("M/d/yyyy"),
+        QStringLiteral("yyyy-MM-dd"),
+        QStringLiteral("dd.MM.yyyy"),
+    };
+    for(const QString& format : formats)
+    {
+        const QDate date = QDate::fromString(text, format);
+        if(date.isValid())
+        {
+            return date.toString(Qt::ISODate);
+        }
+    }
+    return text;
+}
+
+QJsonObject MotherboardInfo()
+{
+    QString manufacturer;
+    QString product;
+    QString version;
+
+#ifdef Q_OS_WIN
+    QSettings bios(
+        QStringLiteral("HKEY_LOCAL_MACHINE\\HARDWARE\\DESCRIPTION\\System\\BIOS"),
+        QSettings::NativeFormat);
+    manufacturer = ReadSettingsString(bios, "BaseBoardManufacturer");
+    product = ReadSettingsString(bios, "BaseBoardProduct");
+    version = ReadSettingsString(bios, "BaseBoardVersion");
+#endif
+
+    QJsonObject info;
+    info.insert(QStringLiteral("model"), product);
+    info.insert(QStringLiteral("manufacturer"), manufacturer);
+    info.insert(QStringLiteral("product"), product);
+    info.insert(QStringLiteral("vendor"), manufacturer);
+    if(!version.isEmpty())
+    {
+        info.insert(QStringLiteral("version"), version);
+    }
+    return info;
+}
+
+QJsonObject BiosInfo()
+{
+    QString vendor;
+    QString version;
+    QString raw_date;
+
+#ifdef Q_OS_WIN
+    QSettings bios(
+        QStringLiteral("HKEY_LOCAL_MACHINE\\HARDWARE\\DESCRIPTION\\System\\BIOS"),
+        QSettings::NativeFormat);
+    vendor = ReadSettingsString(bios, "BIOSVendor");
+    version = ReadSettingsString(bios, "BIOSVersion");
+    raw_date = ReadSettingsString(bios, "BIOSReleaseDate");
+#endif
+
+    const QString release_date = NormalizeBiosDate(raw_date);
+    QJsonObject info;
+    info.insert(QStringLiteral("vendor"), vendor);
+    info.insert(QStringLiteral("version"), version);
+    info.insert(QStringLiteral("date"), raw_date);
+    info.insert(QStringLiteral("releaseDate"), release_date);
+    return info;
+}
+
+QJsonObject RamInfo()
+{
+    QJsonObject info;
+    info.insert(QStringLiteral("totalMemory"), 0);
+    info.insert(QStringLiteral("modules"), QJsonArray());
+    return info;
+}
+
+JSValue GetMotherboardInfoJs(JSContext* context, JSValueConst, int, JSValueConst*)
+{
+    return JsonToJsValue(context, MotherboardInfo(), "<systeminfo-motherboard>");
+}
+
+JSValue GetBiosInfoJs(JSContext* context, JSValueConst, int, JSValueConst*)
+{
+    return JsonToJsValue(context, BiosInfo(), "<systeminfo-bios>");
+}
+
+JSValue GetRamInfoJs(JSContext* context, JSValueConst, int, JSValueConst*)
+{
+    return JsonToJsValue(context, RamInfo(), "<systeminfo-ram>");
+}
+
+void SetFunctionProperty(JSContext* context, JSValue object, const char* name, JSCFunction* function)
+{
+    JSValue js_function = JS_NewCFunction(context, function, name, 0);
+    if(JS_SetPropertyStr(context, object, name, js_function) < 0)
+    {
+        throw std::runtime_error(std::string("failed to register systeminfo.") + name);
+    }
+}
+
+void RegisterSystemInfo(JSContext* context)
+{
+    JSValue systeminfo = JS_NewObject(context);
+    if(JS_IsException(systeminfo))
+    {
+        throw std::runtime_error("failed to create systeminfo object");
+    }
+
+    try
+    {
+        SetFunctionProperty(context, systeminfo, "GetMotherboardInfo", GetMotherboardInfoJs);
+        SetFunctionProperty(context, systeminfo, "GetBiosInfo", GetBiosInfoJs);
+        SetFunctionProperty(context, systeminfo, "GetRamInfo", GetRamInfoJs);
+    }
+    catch(...)
+    {
+        JS_FreeValue(context, systeminfo);
+        throw;
+    }
+
+    JSValue global = JS_GetGlobalObject(context);
+    if(JS_SetPropertyStr(context, global, "systeminfo", systeminfo) < 0)
+    {
+        JS_FreeValue(context, global);
+        throw std::runtime_error("failed to register systeminfo object");
+    }
+    JS_FreeValue(context, global);
 }
 
 HidBackend::Handle FindEndpointHandle(
@@ -312,5 +504,7 @@ void RegisterRuntimeCallbacks(JSContext* context)
         }
     }
     JS_FreeValue(context, global);
+
+    RegisterSystemInfo(context);
 }
 }

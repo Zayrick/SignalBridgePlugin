@@ -86,12 +86,12 @@ var LCD = {
     getFrame: function() { return []; },
 };
 
-var systeminfo = {
+var systeminfo = (typeof globalThis.systeminfo !== "undefined") ? globalThis.systeminfo : {
     GetMotherboardInfo: function() {
         return { model: "", manufacturer: "", product: "", vendor: "" };
     },
     GetBiosInfo: function() {
-        return { vendor: "", version: "", date: "" };
+        return { vendor: "", version: "", date: "", releaseDate: "" };
     },
     GetRamInfo: function() {
         return { totalMemory: 0, modules: [] };
