@@ -50,7 +50,8 @@ public:
 private:
     void CreateRuntime();
     void InitializeScript();
-    void ApplyConfigurationToRuntime(const QString& changed_property = QString());
+    void DrainPendingConfigurationChanges();
+    void LogConfigurationError(const QString& property, const std::string& message) const;
     void BuildZonesFromTopology(const QJsonObject& topology);
 
     std::shared_ptr<HidBackend> hid_backend_;
@@ -62,6 +63,7 @@ private:
     std::unique_ptr<EndpointSession> endpoint_session_;
     std::unique_ptr<QuickJsRuntime> runtime_;
     std::vector<ZoneTarget> zone_targets_;
+    std::vector<QString> pending_configuration_changes_;
     mutable std::mutex mutex_;
     bool shutting_down_ = false;
 };

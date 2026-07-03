@@ -3,6 +3,7 @@
 #include <stdexcept>
 #include <utility>
 
+#include <QByteArray>
 #include <QJsonArray>
 
 #include "domain/ControlParameters.h"
@@ -37,6 +38,12 @@ constexpr const char* kApplyStaticMetadataJs = R"JS(
     }
 })();
 )JS";
+
+std::string ConfigurationCallbackName(const QString& property)
+{
+    const QByteArray property_bytes = property.toUtf8();
+    return std::string("on") + property_bytes.constData() + "Changed";
+}
 }
 
 struct RuntimeModuleState
@@ -386,6 +393,45 @@ void QuickJsRuntime::ApplyConfiguration(const ScriptMeta& meta, const QJsonObjec
 
         const QJsonValue configured = configuration.value(property);
         SetGlobalJson(property.toStdString(), NormalizeParameterValue(parameter, configured));
+    }
+}
+
+void QuickJsRuntime::ApplyConfigurationChange(const ScriptMeta& meta, const QJsonObject& configuration, const QString& property)
+{
+    if(property.isEmpty())
+    {
+        return;
+    }
+
+    bool applied = false;
+    for(const QJsonObject& parameter : meta.control_parameters)
+    {
+        if(parameter.value("property").toString() != property)
+        {
+            continue;
+        }
+
+        const QJsonValue configured = configuration.value(property);
+        SetGlobalJson(property.toStdString(), NormalizeParameterValue(parameter, configured));
+        applied = true;
+        break;
+    }
+
+    if(!applied && configuration.contains(property))
+    {
+        SetGlobalJson(property.toStdString(), configuration.value(property));
+        applied = true;
+    }
+
+    if(!applied)
+    {
+        return;
+    }
+
+    const std::string callback = ConfigurationCallbackName(property);
+    if(HasModuleExport(callback))
+    {
+        CallModuleExportJson(callback);
     }
 }
 

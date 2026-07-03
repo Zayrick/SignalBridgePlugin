@@ -8,6 +8,7 @@
 #include <QJsonArray>
 #include <QJsonObject>
 #include <QJsonValue>
+#include <QString>
 
 #include "domain/ScriptTypes.h"
 #include "runtime/RuntimeBindings.h"
@@ -45,6 +46,7 @@ public:
     void SetGlobalJson(const std::string& name, const QJsonValue& value);
     void ApplyConfigurationValues(const QJsonObject& configuration);
     void ApplyConfiguration(const ScriptMeta& meta, const QJsonObject& configuration);
+    void ApplyConfigurationChange(const ScriptMeta& meta, const QJsonObject& configuration, const QString& property);
     void ApplyStaticMetadata(const ScriptMeta& meta);
     std::vector<ScriptSource> LoadedModuleSources() const;
 

@@ -6,18 +6,19 @@ SignalBridgeController* ControllerRegistry::Register(
     ResourceManagerInterface* manager,
     std::unique_ptr<SignalBridgeController> controller)
 {
-    SignalBridgeController* raw = controller.get();
+    std::shared_ptr<SignalBridgeController> owned(std::move(controller));
+    SignalBridgeController* raw = owned.get();
     manager->RegisterRGBController(raw);
     {
         std::lock_guard<std::mutex> lock(mutex_);
-        controllers_.push_back(std::move(controller));
+        controllers_.push_back(std::move(owned));
     }
     return raw;
 }
 
 void ControllerRegistry::Clear(ResourceManagerInterface* manager)
 {
-    std::vector<std::unique_ptr<SignalBridgeController>> controllers;
+    std::vector<std::shared_ptr<SignalBridgeController>> controllers;
     {
         std::lock_guard<std::mutex> lock(mutex_);
         controllers.swap(controllers_);
@@ -25,7 +26,7 @@ void ControllerRegistry::Clear(ResourceManagerInterface* manager)
 
     if(manager != nullptr)
     {
-        for(const std::unique_ptr<SignalBridgeController>& controller : controllers)
+        for(const std::shared_ptr<SignalBridgeController>& controller : controllers)
         {
             manager->UnregisterRGBController(controller.get());
         }
@@ -34,10 +35,22 @@ void ControllerRegistry::Clear(ResourceManagerInterface* manager)
 
 void ControllerRegistry::ApplyConfiguration(const QString& key, const QString& property, const QJsonValue& value)
 {
-    std::lock_guard<std::mutex> lock(mutex_);
-    for(const std::unique_ptr<SignalBridgeController>& controller : controllers_)
+    std::vector<std::shared_ptr<SignalBridgeController>> matching;
     {
-        if(controller == nullptr || QString::fromStdString(controller->ConfigKey()) != key)
+        std::lock_guard<std::mutex> lock(mutex_);
+        for(const std::shared_ptr<SignalBridgeController>& controller : controllers_)
+        {
+            if(controller == nullptr || QString::fromStdString(controller->ConfigKey()) != key)
+            {
+                continue;
+            }
+            matching.push_back(controller);
+        }
+    }
+
+    for(const std::shared_ptr<SignalBridgeController>& controller : matching)
+    {
+        if(controller == nullptr)
         {
             continue;
         }

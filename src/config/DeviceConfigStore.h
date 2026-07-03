@@ -20,11 +20,11 @@ public:
 
     QJsonObject ConfigurationForDevice(const QString& key, const QString& script_key) const;
     QJsonObject ConfigurationForDevice(const QString& key, const ScriptMeta& meta) const;
-    void SetDeviceConfigurationValue(const QString& key, const QString& property, const QJsonValue& value);
+    bool SetDeviceConfigurationValue(const QString& key, const QString& property, const QJsonValue& value);
 
 private:
     QString StorePath() const;
-    void Save() const;
+    bool Save() const;
 
     ResourceManagerInterface* manager_ = nullptr;
     mutable std::mutex mutex_;

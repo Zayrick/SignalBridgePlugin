@@ -196,8 +196,10 @@ private:
 
     void SetDeviceConfigurationValue(const QString& key, const QString& property, const QJsonValue& value)
     {
-        config_store_.SetDeviceConfigurationValue(key, property, value);
-        registry_.ApplyConfiguration(key, property, value);
+        if(config_store_.SetDeviceConfigurationValue(key, property, value))
+        {
+            registry_.ApplyConfiguration(key, property, value);
+        }
     }
 
     SignalBridgePlugin* plugin_ = nullptr;

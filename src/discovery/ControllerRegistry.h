@@ -24,7 +24,7 @@ public:
 
 private:
     std::mutex mutex_;
-    std::vector<std::unique_ptr<SignalBridgeController>> controllers_;
+    std::vector<std::shared_ptr<SignalBridgeController>> controllers_;
 };
 }
 

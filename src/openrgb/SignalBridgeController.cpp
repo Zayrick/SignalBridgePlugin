@@ -128,6 +128,8 @@ void SignalBridgeController::DeviceUpdateLEDs()
 
     try
     {
+        DrainPendingConfigurationChanges();
+
         QJsonObject main_frame;
         QJsonObject channel_frames;
         QJsonObject subdevice_frames;
@@ -202,59 +204,104 @@ const ScriptMeta& SignalBridgeController::ScriptMetadata() const
 void SignalBridgeController::SetConfiguration(QJsonObject configuration)
 {
     std::lock_guard<std::mutex> lock(mutex_);
+    pending_configuration_changes_.clear();
+    for(const QJsonObject& parameter : meta_.control_parameters)
+    {
+        const QString property = parameter.value("property").toString();
+        if(property.isEmpty())
+        {
+            continue;
+        }
+
+        if(NormalizeParameterValue(parameter, configuration_.value(property)) !=
+           NormalizeParameterValue(parameter, configuration.value(property)))
+        {
+            pending_configuration_changes_.push_back(property);
+        }
+    }
     configuration_ = std::move(configuration);
-    ApplyConfigurationToRuntime();
 }
 
 void SignalBridgeController::SetConfigurationValue(const QString& property, const QJsonValue& value)
 {
     std::lock_guard<std::mutex> lock(mutex_);
+    if(property.isEmpty() || (configuration_.contains(property) && configuration_.value(property) == value))
+    {
+        return;
+    }
+
     configuration_.insert(property, value);
-    ApplyConfigurationToRuntime(property);
+    pending_configuration_changes_.erase(
+        std::remove(pending_configuration_changes_.begin(), pending_configuration_changes_.end(), property),
+        pending_configuration_changes_.end());
+    pending_configuration_changes_.push_back(property);
 }
 
-void SignalBridgeController::ApplyConfigurationToRuntime(const QString& changed_property)
+void SignalBridgeController::DrainPendingConfigurationChanges()
 {
-    if(runtime_ != nullptr)
+    if(runtime_ == nullptr || pending_configuration_changes_.empty())
+    {
+        return;
+    }
+
+    std::vector<QString> changes;
+    changes.swap(pending_configuration_changes_);
+
+    for(const QString& property : changes)
     {
         try
         {
-            runtime_->ApplyConfiguration(meta_, configuration_);
+            runtime_->ApplyConfigurationChange(meta_, configuration_, property);
         }
         catch(const std::exception& err)
         {
-            if(log_callback_)
-            {
-                std::string message = "Failed to apply configuration";
-                if(!changed_property.isEmpty())
-                {
-                    const QByteArray property = changed_property.toUtf8();
-                    message += " \"";
-                    message += property.constData();
-                    message += "\"";
-                }
-                message += ": ";
-                message += err.what();
-                log_callback_(meta_.lookup_path.empty() ? meta_.source_path : meta_.lookup_path, message);
-            }
+            LogConfigurationError(property, err.what());
         }
         catch(...)
         {
-            if(log_callback_)
-            {
-                std::string message = "Failed to apply configuration";
-                if(!changed_property.isEmpty())
-                {
-                    const QByteArray property = changed_property.toUtf8();
-                    message += " \"";
-                    message += property.constData();
-                    message += "\"";
-                }
-                message += ": unknown error";
-                log_callback_(meta_.lookup_path.empty() ? meta_.source_path : meta_.lookup_path, message);
-            }
+            LogConfigurationError(property, "unknown error");
         }
     }
+
+    try
+    {
+        QJsonArray args;
+        args.append(false);
+        const QJsonObject topology = runtime_->CallGlobalJson("__srgb_take_topology_update", args).toObject();
+        if(!topology.isEmpty())
+        {
+            BuildZonesFromTopology(topology);
+            SetupColors();
+        }
+    }
+    catch(const std::exception& err)
+    {
+        LogConfigurationError(QString(), std::string("failed to rebuild topology after configuration change: ") + err.what());
+    }
+    catch(...)
+    {
+        LogConfigurationError(QString(), "failed to rebuild topology after configuration change: unknown error");
+    }
+}
+
+void SignalBridgeController::LogConfigurationError(const QString& property, const std::string& details) const
+{
+    if(!log_callback_)
+    {
+        return;
+    }
+
+    std::string message = "Failed to apply configuration";
+    if(!property.isEmpty())
+    {
+        const QByteArray property_bytes = property.toUtf8();
+        message += " \"";
+        message += property_bytes.constData();
+        message += "\"";
+    }
+    message += ": ";
+    message += details;
+    log_callback_(meta_.lookup_path.empty() ? meta_.source_path : meta_.lookup_path, message);
 }
 
 void SignalBridgeController::CreateRuntime()

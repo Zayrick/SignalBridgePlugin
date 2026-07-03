@@ -130,6 +130,7 @@ if(SIGNALBRIDGE_BUILD_TESTS)
     add_executable(SignalBridgeCoreTests)
     target_sources(SignalBridgeCoreTests PRIVATE
         OpenRGB/RGBController/RGBController.cpp
+        resources/SignalBridgeResources.qrc
         tests/SignalBridgeCoreTests.cpp
         src/config/DeviceConfigStore.cpp
         src/config/DeviceConfigStore.h
@@ -147,8 +148,20 @@ if(SIGNALBRIDGE_BUILD_TESTS)
         src/openrgb/FrameBuilder.h
         src/openrgb/TopologyMapper.cpp
         src/openrgb/TopologyMapper.h
+        src/runtime/BuiltinModules.cpp
+        src/runtime/BuiltinModules.h
+        src/runtime/ModuleLoader.cpp
+        src/runtime/ModuleLoader.h
+        src/runtime/QuickJsRuntime.cpp
+        src/runtime/QuickJsRuntime.h
+        src/runtime/QuickJsValue.cpp
+        src/runtime/QuickJsValue.h
+        src/runtime/RuntimeBindings.cpp
+        src/runtime/RuntimeBindings.h
+        src/runtime/SignalRgbRuntimeFactory.cpp
+        src/runtime/SignalRgbRuntimeFactory.h
     )
-    target_link_libraries(SignalBridgeCoreTests PRIVATE Qt${QT_VERSION_MAJOR}::Widgets hidapi::hidapi)
+    target_link_libraries(SignalBridgeCoreTests PRIVATE Qt${QT_VERSION_MAJOR}::Widgets hidapi::hidapi qjs)
     if(MSVC)
         target_compile_options(SignalBridgeCoreTests PRIVATE /FS)
     endif()

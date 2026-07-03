@@ -4,7 +4,9 @@
 #include <utility>
 #include <vector>
 
+#include <QFile>
 #include <QJsonArray>
+#include <QJsonDocument>
 #include <QJsonObject>
 #include <QTemporaryDir>
 
@@ -15,6 +17,7 @@
 #include "domain/ScriptTypes.h"
 #include "openrgb/FrameBuilder.h"
 #include "openrgb/TopologyMapper.h"
+#include "runtime/SignalRgbRuntimeFactory.h"
 
 namespace
 {
@@ -115,13 +118,144 @@ bool TestDeviceConfigStore()
 
     ScriptMeta meta;
     meta.lookup_path = "keyboard.js";
-    store.SetDeviceConfigurationValue("keyboard.js", "mode", "script");
-    store.SetDeviceConfigurationValue("keyboard.js|SERIAL", "mode", "device");
+    const bool script_changed = store.SetDeviceConfigurationValue("keyboard.js", "mode", "script");
+    const bool duplicate_changed = store.SetDeviceConfigurationValue("keyboard.js", "mode", "script");
+    const bool device_changed = store.SetDeviceConfigurationValue("keyboard.js|SERIAL", "mode", "device");
     store.SetDeviceConfigurationValue("keyboard.js|SERIAL", "brightness", 75);
 
     const QJsonObject merged = store.ConfigurationForDevice("keyboard.js|SERIAL", meta);
-    return Check(merged.value("mode").toString() == "device", "device config overrides script defaults") &&
-           Check(merged.value("brightness").toInt() == 75, "device config preserves extra exact values");
+    bool ok = Check(script_changed, "new script config reports a change") &&
+              Check(!duplicate_changed, "unchanged config does not rewrite") &&
+              Check(device_changed, "new device config reports a change") &&
+              Check(merged.value("mode").toString() == "device", "device config overrides script defaults") &&
+              Check(merged.value("brightness").toInt() == 75, "device config preserves extra exact values");
+
+    DeviceConfigStore reloaded;
+    reloaded.Load(&manager);
+    const QJsonObject saved = reloaded.ConfigurationForDevice("keyboard.js|SERIAL", meta);
+    ok = ok &&
+         Check(saved.value("mode").toString() == "device", "atomic saved config reloads as complete JSON") &&
+         Check(saved.value("brightness").toInt() == 75, "atomic saved config preserves numeric values");
+
+    QTemporaryDir legacy_temp;
+    ok = Check(legacy_temp.isValid(), "temporary legacy config directory is valid") && ok;
+    if(legacy_temp.isValid())
+    {
+        const QString legacy_dir = legacy_temp.path() + QStringLiteral("/SignalBridge");
+        filesystem::create_directories(filesystem::path(legacy_dir.toStdString()));
+        QFile legacy_file(legacy_dir + QStringLiteral("/device_config.json"));
+        if(legacy_file.open(QIODevice::WriteOnly | QIODevice::Truncate | QIODevice::Text))
+        {
+            QJsonObject legacy_root;
+            QJsonObject legacy_device;
+            legacy_device.insert("mode", "legacy");
+            legacy_root.insert("keyboard.js|SERIAL", legacy_device);
+            legacy_file.write(QJsonDocument(legacy_root).toJson(QJsonDocument::Compact));
+            legacy_file.close();
+        }
+
+        FakeResourceManager legacy_manager(filesystem::path(legacy_temp.path().toStdString()));
+        DeviceConfigStore legacy_store;
+        legacy_store.Load(&legacy_manager);
+        ok = Check(legacy_store.ConfigurationForDevice("keyboard.js|SERIAL", meta).value("mode").toString() == "legacy",
+                   "legacy root config format still loads") &&
+             ok;
+    }
+
+    return ok;
+}
+
+QJsonValue RuntimeGlobal(signalbridge::QuickJsRuntime& runtime, const QString& name)
+{
+    QJsonArray args;
+    args.append(name);
+    return runtime.CallGlobalJson("__test_get", args);
+}
+
+bool TestRuntimeConfigurationCallbacks()
+{
+    using namespace signalbridge;
+
+    const std::string lookup = "runtime-test.js";
+    const std::string source = R"JS(
+globalThis.modeCallbackCount = 0;
+export function Name() { return "Runtime Test"; }
+export function ControllableParameters() {
+    return [
+        { property: "mode", type: "combobox", values: ["Canvas", "Forced"], default: "Canvas" },
+        { property: "channelCount", type: "number", min: "1", max: "2", default: "1" }
+    ];
+}
+export function Initialize() {
+    device.addChannel("Channel 1", 10);
+}
+export function onmodeChanged() {
+    globalThis.modeCallbackCount = (globalThis.modeCallbackCount || 0) + 1;
+    globalThis.modeCallbackValue = mode;
+}
+export function onchannelCountChanged() {
+    device.removeChannel("Channel 1");
+    device.removeChannel("Channel 2");
+    if (channelCount <= 1) {
+        device.addChannel("Channel 1", 10);
+    } else {
+        device.addChannel("Channel 2", 20);
+    }
+}
+export function Render() {
+    globalThis.renderMode = mode;
+}
+)JS";
+
+    QuickJsRuntime runtime = SignalRgbRuntimeFactory::CreateScan();
+    runtime.Eval("function __test_get(name) { return globalThis[name]; }", "<test-get>");
+    runtime.LoadModule(lookup, { ScriptSource{ lookup, lookup, source } });
+    runtime.EvaluateModule();
+
+    ScriptMeta meta;
+    meta.lookup_path = lookup;
+    meta.source_path = lookup;
+    meta.name = "Runtime Test";
+    MergeControlParameters(meta.control_parameters, runtime.CallModuleExportJson("ControllableParameters"));
+    runtime.ApplyConfiguration(meta, QJsonObject());
+
+    bool ok = Check(RuntimeGlobal(runtime, "mode").toString() == "Canvas", "initial config applies default global value") &&
+              Check(RuntimeGlobal(runtime, "modeCallbackCount").toInt() == 0, "initial config does not call onChanged callbacks");
+
+    runtime.CallModuleExportJson("Initialize");
+    QJsonArray force_topology;
+    force_topology.append(true);
+    const QJsonObject initial_topology = runtime.CallGlobalJson("__srgb_take_topology_update", force_topology).toObject();
+    ok = Check(initial_topology.value("channels").toArray().first().toObject().value("name").toString() == "Channel 1",
+               "initial topology contains first channel") &&
+         ok;
+
+    QJsonObject configuration;
+    configuration.insert("mode", "Forced");
+    runtime.ApplyConfigurationChange(meta, configuration, "mode");
+    runtime.CallModuleExportJson("Render");
+    ok = Check(RuntimeGlobal(runtime, "mode").toString() == "Forced", "runtime config change updates global value") &&
+         Check(RuntimeGlobal(runtime, "modeCallbackCount").toInt() == 1, "runtime config change calls matching callback once") &&
+         Check(RuntimeGlobal(runtime, "modeCallbackValue").toString() == "Forced", "callback sees normalized global value") &&
+         Check(RuntimeGlobal(runtime, "renderMode").toString() == "Forced", "render observes updated config value") &&
+         ok;
+
+    configuration.insert("channelCount", 2);
+    runtime.ApplyConfigurationChange(meta, configuration, "channelCount");
+    QJsonArray dirty_topology;
+    dirty_topology.append(false);
+    const QJsonObject changed_topology = runtime.CallGlobalJson("__srgb_take_topology_update", dirty_topology).toObject();
+    ok = Check(changed_topology.value("channels").toArray().first().toObject().value("name").toString() == "Channel 2",
+               "config callback can dirty and replace runtime topology") &&
+         ok;
+
+    QJsonArray no_dirty_topology;
+    no_dirty_topology.append(false);
+    ok = Check(!runtime.CallGlobalJson("__srgb_take_topology_update", no_dirty_topology).toBool(true),
+               "topology dirty flag is cleared after it is consumed") &&
+         ok;
+
+    return ok;
 }
 
 bool TestTopologyAndFrame()
@@ -167,6 +301,7 @@ int main()
     ok = TestPathUtils() && ok;
     ok = TestControlParameters() && ok;
     ok = TestDeviceConfigStore() && ok;
+    ok = TestRuntimeConfigurationCallbacks() && ok;
     ok = TestTopologyAndFrame() && ok;
     if(ok)
     {

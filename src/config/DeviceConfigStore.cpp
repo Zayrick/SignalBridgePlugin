@@ -2,6 +2,7 @@
 
 #include <QFile>
 #include <QJsonDocument>
+#include <QSaveFile>
 
 #include "domain/DeviceRecords.h"
 
@@ -60,16 +61,27 @@ QJsonObject DeviceConfigStore::ConfigurationForDevice(const QString& key, const 
     return ConfigurationForDevice(key, ConfigKeyForScript(meta));
 }
 
-void DeviceConfigStore::SetDeviceConfigurationValue(const QString& key, const QString& property, const QJsonValue& value)
+bool DeviceConfigStore::SetDeviceConfigurationValue(const QString& key, const QString& property, const QJsonValue& value)
 {
     {
         std::lock_guard<std::mutex> lock(mutex_);
+        if(key.isEmpty() || property.isEmpty())
+        {
+            return false;
+        }
+
         QJsonObject device = store_.value(key).toObject();
+        if(device.contains(property) && device.value(property) == value)
+        {
+            return false;
+        }
+
         device.insert(property, value);
         store_.insert(key, device);
     }
 
     Save();
+    return true;
 }
 
 QString DeviceConfigStore::StorePath() const
@@ -84,34 +96,40 @@ QString DeviceConfigStore::StorePath() const
     return QString::fromStdString((directory / "device_config.json").generic_u8string());
 }
 
-void DeviceConfigStore::Save() const
+bool DeviceConfigStore::Save() const
 {
     QJsonObject snapshot;
+    QString path;
     {
         std::lock_guard<std::mutex> lock(mutex_);
         snapshot = store_;
+        path = StorePath();
     }
 
     try
     {
-        const QString path = StorePath();
         if(path.isEmpty())
         {
-            return;
+            return false;
         }
 
         QJsonObject root;
         root.insert("version", 1);
         root.insert("devices", snapshot);
 
-        QFile file(path);
+        QSaveFile file(path);
         if(file.open(QIODevice::WriteOnly | QIODevice::Truncate | QIODevice::Text))
         {
-            file.write(QJsonDocument(root).toJson(QJsonDocument::Indented));
+            const QByteArray bytes = QJsonDocument(root).toJson(QJsonDocument::Indented);
+            if(file.write(bytes) == bytes.size())
+            {
+                return file.commit();
+            }
         }
     }
     catch(...)
     {
     }
+    return false;
 }
 }
