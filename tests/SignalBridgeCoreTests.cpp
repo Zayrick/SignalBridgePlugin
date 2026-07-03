@@ -17,6 +17,7 @@
 #include "domain/ScriptTypes.h"
 #include "openrgb/FrameBuilder.h"
 #include "openrgb/TopologyMapper.h"
+#include "runtime/BuiltinModules.h"
 #include "runtime/SignalRgbRuntimeFactory.h"
 
 namespace
@@ -209,6 +210,53 @@ export function ReadSystemInfo() {
            Check(bios.contains("releaseDate"), "bios info exposes SignalRGB releaseDate field");
 }
 
+bool TestRuntimePolyfillsPreserveSystemInfo()
+{
+    using namespace signalbridge;
+
+    const std::string lookup = "polyfill-systeminfo-test.js";
+    const std::string source = R"JS(
+import systeminfo from "@SignalRGB/systeminfo";
+export function ReadSystemInfo() {
+    return {
+        motherboard: systeminfo.GetMotherboardInfo(),
+        bios: systeminfo.GetBiosInfo(),
+        ram: systeminfo.GetRamInfo(),
+    };
+}
+)JS";
+
+    QuickJsRuntime runtime = SignalRgbRuntimeFactory::CreateScan();
+    runtime.Eval(R"JS(
+globalThis.systeminfo = {
+    GetMotherboardInfo: function() {
+        return { model: "native-model", manufacturer: "native-manufacturer", product: "native-product", vendor: "native-vendor" };
+    },
+    GetBiosInfo: function() {
+        return { vendor: "native-bios", version: "native-version", date: "native-date", releaseDate: "native-release" };
+    },
+    GetRamInfo: function() {
+        return { totalMemory: 42, modules: ["native-module"] };
+    },
+};
+)JS", "<native-systeminfo-sentinel>");
+    runtime.Eval(LoadRuntimeResourceText("js/polyfills.js"), "<runtime-polyfills>");
+    runtime.LoadModule(lookup, { ScriptSource{ lookup, lookup, source } });
+    runtime.EvaluateModule();
+
+    const QJsonObject info = runtime.CallModuleExportJson("ReadSystemInfo").toObject();
+    const QJsonObject motherboard = info.value("motherboard").toObject();
+    const QJsonObject bios = info.value("bios").toObject();
+    const QJsonObject ram = info.value("ram").toObject();
+
+    return Check(motherboard.value("model").toString() == "native-model",
+                 "runtime polyfills preserve injected motherboard systeminfo") &&
+           Check(bios.value("releaseDate").toString() == "native-release",
+                 "runtime polyfills preserve injected BIOS systeminfo") &&
+           Check(ram.value("totalMemory").toInt() == 42,
+                 "runtime polyfills preserve injected RAM systeminfo");
+}
+
 bool TestRuntimeConfigurationCallbacks()
 {
     using namespace signalbridge;
@@ -339,6 +387,7 @@ int main()
     ok = TestControlParameters() && ok;
     ok = TestDeviceConfigStore() && ok;
     ok = TestSystemInfoModule() && ok;
+    ok = TestRuntimePolyfillsPreserveSystemInfo() && ok;
     ok = TestRuntimeConfigurationCallbacks() && ok;
     ok = TestTopologyAndFrame() && ok;
     if(ok)
