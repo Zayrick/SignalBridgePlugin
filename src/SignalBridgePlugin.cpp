@@ -1,8 +1,11 @@
 #include "SignalBridge/SignalBridgePlugin.h"
 
 #include <atomic>
+#include <chrono>
 #include <memory>
 #include <thread>
+
+#include <QMetaObject>
 
 #include "config/DeviceConfigStore.h"
 #include "discovery/ControllerRegistry.h"
@@ -21,14 +24,22 @@ public:
 
     ~SignalBridgePluginCore()
     {
+        unloading_.store(true);
         StopDiscoveryThread();
-        registry_.Clear(resource_manager_);
+        WaitForOpenRgbDetection();
+        registry_.UnregisterAndDeleteControllers(resource_manager_.load());
+        WaitForOpenRgbDetection();
+        UnregisterOpenRgbCallbacks();
     }
 
     void Load(ResourceManagerInterface* manager)
     {
-        resource_manager_ = manager;
-        config_store_.Load(resource_manager_);
+        resource_manager_.store(manager);
+        unloading_.store(false);
+        openrgb_detection_running_.store(false);
+        pending_discovery_after_openrgb_detection_.store(false);
+        RegisterOpenRgbCallbacks();
+        config_store_.Load(resource_manager_.load());
         EnsureWidget();
         widget_->SetResourceAvailable(true);
         widget_->ClearLogOutput();
@@ -43,9 +54,13 @@ public:
 
     void Unload()
     {
+        unloading_.store(true);
         StopDiscoveryThread();
-        registry_.Clear(resource_manager_);
-        resource_manager_ = nullptr;
+        WaitForOpenRgbDetection();
+        registry_.UnregisterAndDeleteControllers(resource_manager_.load());
+        WaitForOpenRgbDetection();
+        UnregisterOpenRgbCallbacks();
+        resource_manager_.store(nullptr);
         config_store_.Reset();
 
         if(widget_ != nullptr)
@@ -64,12 +79,26 @@ public:
 
     void DiscoverSignalRgbDevices()
     {
-        if(resource_manager_ == nullptr)
+        ResourceManagerInterface* manager = resource_manager_.load();
+        if(manager == nullptr)
         {
             return;
         }
 
         EnsureWidget();
+        if(openrgb_detection_running_.load())
+        {
+            pending_discovery_after_openrgb_detection_.store(true);
+            widget_->ApplyDiscoveryStatus(
+                QStringLiteral("Waiting for OpenRGB device scan to finish"),
+                QString(),
+                QStringList(),
+                QStringLiteral("[]"),
+                false,
+                0);
+            return;
+        }
+
         if(discovery_running_.load())
         {
             widget_->ApplyDiscoveryStatus(
@@ -100,7 +129,7 @@ public:
             true,
             0);
 
-        discovery_thread_ = std::thread(&SignalBridgePluginCore::DiscoveryWorker, this, generation, resource_manager_);
+        discovery_thread_ = std::thread(&SignalBridgePluginCore::DiscoveryWorker, this, generation, manager);
     }
 
     void ApplyDiscoveryStatus(
@@ -150,11 +179,21 @@ private:
             [this]() {
                 DiscoverSignalRgbDevices();
             });
-        widget_->SetResourceAvailable(resource_manager_ != nullptr && !discovery_running_.load());
+        widget_->SetResourceAvailable(resource_manager_.load() != nullptr && !discovery_running_.load());
     }
 
     void DiscoveryWorker(int generation, ResourceManagerInterface* manager)
     {
+        if(manager != nullptr)
+        {
+            manager->WaitForDeviceDetection();
+        }
+        if(IsDiscoveryStale(generation) || openrgb_detection_running_.load())
+        {
+            discovery_running_.store(false);
+            return;
+        }
+
         DiscoveryCallbacks callbacks;
         callbacks.is_stale = [this](int callback_generation) {
             return IsDiscoveryStale(callback_generation);
@@ -189,6 +228,14 @@ private:
         discovery_running_.store(false);
     }
 
+    void WaitForOpenRgbDetection()
+    {
+        while(openrgb_detection_running_.load())
+        {
+            std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        }
+    }
+
     bool IsDiscoveryStale(int generation) const
     {
         return discovery_cancel_requested_.load() || generation != discovery_generation_.load();
@@ -198,12 +245,94 @@ private:
     {
         if(config_store_.SetDeviceConfigurationValue(key, property, value))
         {
-            registry_.ApplyConfiguration(key, property, value);
+            registry_.ApplyConfiguration(resource_manager_.load(), key, property, value);
         }
     }
 
+    static void OpenRgbDetectionStartCallback(void* context)
+    {
+        if(context != nullptr)
+        {
+            static_cast<SignalBridgePluginCore*>(context)->OnOpenRgbDetectionStarted();
+        }
+    }
+
+    static void OpenRgbDetectionEndCallback(void* context)
+    {
+        if(context != nullptr)
+        {
+            static_cast<SignalBridgePluginCore*>(context)->OnOpenRgbDetectionEnded();
+        }
+    }
+
+    void RegisterOpenRgbCallbacks()
+    {
+        ResourceManagerInterface* manager = resource_manager_.load();
+        if(manager == nullptr || callbacks_registered_)
+        {
+            return;
+        }
+
+        manager->RegisterDetectionStartCallback(OpenRgbDetectionStartCallback, this);
+        manager->RegisterDetectionEndCallback(OpenRgbDetectionEndCallback, this);
+        callbacks_registered_ = true;
+    }
+
+    void UnregisterOpenRgbCallbacks()
+    {
+        ResourceManagerInterface* manager = resource_manager_.load();
+        if(manager == nullptr || !callbacks_registered_)
+        {
+            return;
+        }
+
+        manager->UnregisterDetectionStartCallback(OpenRgbDetectionStartCallback, this);
+        manager->UnregisterDetectionEndCallback(OpenRgbDetectionEndCallback, this);
+        callbacks_registered_ = false;
+    }
+
+    void OnOpenRgbDetectionStarted()
+    {
+        openrgb_detection_running_.store(true);
+        pending_discovery_after_openrgb_detection_.store(!unloading_.load());
+        StopDiscoveryThread();
+        registry_.AbandonOpenRgbOwnedControllers();
+
+        plugin_->EmitDiscoveryStatus(
+            discovery_generation_.load(),
+            QStringLiteral("OpenRGB device scan in progress"),
+            QString(),
+            QStringList(),
+            QStringLiteral("[]"),
+            false,
+            0);
+    }
+
+    void OnOpenRgbDetectionEnded()
+    {
+        const bool should_discover =
+            pending_discovery_after_openrgb_detection_.exchange(false) &&
+            !unloading_.load() &&
+            resource_manager_.load() != nullptr;
+
+        if(should_discover)
+        {
+            QMetaObject::invokeMethod(
+                plugin_,
+                [this]() {
+                    if(!unloading_.load())
+                    {
+                        DiscoverSignalRgbDevices();
+                    }
+                },
+                Qt::QueuedConnection);
+        }
+
+        openrgb_detection_running_.store(false);
+    }
+
     SignalBridgePlugin* plugin_ = nullptr;
-    ResourceManagerInterface* resource_manager_ = nullptr;
+    std::atomic<ResourceManagerInterface*> resource_manager_{ nullptr };
     DeviceConfigStore config_store_;
     ControllerRegistry registry_;
     DiscoveryService discovery_service_;
@@ -211,7 +340,11 @@ private:
     std::thread discovery_thread_;
     std::atomic<bool> discovery_running_{ false };
     std::atomic<bool> discovery_cancel_requested_{ false };
+    std::atomic<bool> openrgb_detection_running_{ false };
+    std::atomic<bool> pending_discovery_after_openrgb_detection_{ false };
+    std::atomic<bool> unloading_{ false };
     std::atomic<int> discovery_generation_{ 0 };
+    bool callbacks_registered_ = false;
     int discovery_progress_ = 0;
 };
 }

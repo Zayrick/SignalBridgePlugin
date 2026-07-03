@@ -1,60 +1,118 @@
 #include "discovery/ControllerRegistry.h"
 
+#include <algorithm>
+
 namespace signalbridge
 {
+namespace
+{
+bool ContainsController(const std::vector<RGBController*>& controllers, RGBController* controller)
+{
+    return std::find(controllers.begin(), controllers.end(), controller) != controllers.end();
+}
+}
+
 SignalBridgeController* ControllerRegistry::Register(
     ResourceManagerInterface* manager,
     std::unique_ptr<SignalBridgeController> controller)
 {
-    std::shared_ptr<SignalBridgeController> owned(std::move(controller));
-    SignalBridgeController* raw = owned.get();
+    if(manager == nullptr || controller == nullptr)
+    {
+        return nullptr;
+    }
+
+    SignalBridgeController* raw = controller.get();
+    const std::string config_key = raw->ConfigKey();
     manager->RegisterRGBController(raw);
+    controller.release();
+
     {
         std::lock_guard<std::mutex> lock(mutex_);
-        controllers_.push_back(std::move(owned));
+        controllers_.push_back({ raw, config_key });
     }
     return raw;
 }
 
-void ControllerRegistry::Clear(ResourceManagerInterface* manager)
+void ControllerRegistry::AbandonOpenRgbOwnedControllers()
 {
-    std::vector<std::shared_ptr<SignalBridgeController>> controllers;
+    std::lock_guard<std::mutex> lock(mutex_);
+    controllers_.clear();
+}
+
+void ControllerRegistry::UnregisterAndDeleteControllers(ResourceManagerInterface* manager)
+{
+    std::vector<Entry> controllers;
     {
         std::lock_guard<std::mutex> lock(mutex_);
         controllers.swap(controllers_);
     }
 
-    if(manager != nullptr)
+    if(manager == nullptr)
     {
-        for(const std::shared_ptr<SignalBridgeController>& controller : controllers)
+        return;
+    }
+
+    for(const Entry& entry : controllers)
+    {
+        if(entry.controller == nullptr)
         {
-            manager->UnregisterRGBController(controller.get());
+            continue;
         }
+
+        if(!ContainsController(manager->GetRGBControllers(), entry.controller))
+        {
+            continue;
+        }
+
+        manager->UnregisterRGBController(entry.controller);
+        delete entry.controller;
     }
 }
 
-void ControllerRegistry::ApplyConfiguration(const QString& key, const QString& property, const QJsonValue& value)
+void ControllerRegistry::ApplyConfiguration(
+    ResourceManagerInterface* manager,
+    const QString& key,
+    const QString& property,
+    const QJsonValue& value)
 {
-    std::vector<std::shared_ptr<SignalBridgeController>> matching;
+    if(manager == nullptr)
+    {
+        return;
+    }
+
+    std::vector<SignalBridgeController*> matching;
     {
         std::lock_guard<std::mutex> lock(mutex_);
-        for(const std::shared_ptr<SignalBridgeController>& controller : controllers_)
+        const std::vector<RGBController*> live_controllers = manager->GetRGBControllers();
+        controllers_.erase(
+            std::remove_if(
+                controllers_.begin(),
+                controllers_.end(),
+                [&live_controllers](const Entry& entry) {
+                    return entry.controller == nullptr || !ContainsController(live_controllers, entry.controller);
+                }),
+            controllers_.end());
+
+        for(const Entry& entry : controllers_)
         {
-            if(controller == nullptr || QString::fromStdString(controller->ConfigKey()) != key)
+            if(QString::fromStdString(entry.config_key) != key)
             {
                 continue;
             }
-            matching.push_back(controller);
+            matching.push_back(entry.controller);
         }
     }
 
-    for(const std::shared_ptr<SignalBridgeController>& controller : matching)
+    for(SignalBridgeController* controller : matching)
     {
         if(controller == nullptr)
         {
             continue;
         }
-        controller->SetConfigurationValue(property, value);
+        if(ContainsController(manager->GetRGBControllers(), controller))
+        {
+            controller->SetConfigurationValue(property, value);
+        }
     }
 }
 }

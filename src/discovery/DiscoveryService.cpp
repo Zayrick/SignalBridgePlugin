@@ -113,7 +113,7 @@ void DiscoveryService::Discover(
 
     try
     {
-        registry.Clear(manager);
+        registry.UnregisterAndDeleteControllers(manager);
 
         if(IsStale(generation, callbacks))
         {
@@ -268,6 +268,10 @@ void DiscoveryService::Discover(
                             config_key.toStdString(),
                             runtime_log_callback);
                         SignalBridgeController* raw_controller = registry.Register(manager, std::move(controller));
+                        if(raw_controller == nullptr)
+                        {
+                            throw std::runtime_error("failed to register controller");
+                        }
                         open_groups.insert(group);
                         registered_devices.append(DeviceRecordForController(raw_controller->ScriptMetadata(), hid, config_key));
                         matched++;

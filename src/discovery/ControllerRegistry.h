@@ -3,6 +3,7 @@
 
 #include <memory>
 #include <mutex>
+#include <string>
 #include <vector>
 
 #include <QJsonValue>
@@ -19,12 +20,23 @@ public:
     SignalBridgeController* Register(
         ResourceManagerInterface* manager,
         std::unique_ptr<SignalBridgeController> controller);
-    void Clear(ResourceManagerInterface* manager);
-    void ApplyConfiguration(const QString& key, const QString& property, const QJsonValue& value);
+    void AbandonOpenRgbOwnedControllers();
+    void UnregisterAndDeleteControllers(ResourceManagerInterface* manager);
+    void ApplyConfiguration(
+        ResourceManagerInterface* manager,
+        const QString& key,
+        const QString& property,
+        const QJsonValue& value);
 
 private:
+    struct Entry
+    {
+        SignalBridgeController* controller = nullptr;
+        std::string config_key;
+    };
+
     std::mutex mutex_;
-    std::vector<std::shared_ptr<SignalBridgeController>> controllers_;
+    std::vector<Entry> controllers_;
 };
 }
 
