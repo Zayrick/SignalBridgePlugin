@@ -8,8 +8,10 @@ set(CMAKE_AUTORCC ON)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-find_package(QT NAMES Qt6 Qt5 REQUIRED COMPONENTS Widgets SerialPort LinguistTools)
-find_package(Qt${QT_VERSION_MAJOR} REQUIRED COMPONENTS Widgets SerialPort LinguistTools)
+find_package(QT NAMES Qt6 Qt5 REQUIRED COMPONENTS Widgets SerialPort)
+find_package(Qt${QT_VERSION_MAJOR} REQUIRED COMPONENTS Widgets SerialPort)
+# find_package(QT NAMES Qt6 Qt5 REQUIRED COMPONENTS Widgets SerialPort LinguistTools)
+# find_package(Qt${QT_VERSION_MAJOR} REQUIRED COMPONENTS Widgets SerialPort LinguistTools)
 
 set(BUILD_SHARED_LIBS OFF CACHE BOOL "Build third-party libraries as static libraries" FORCE)
 set(HIDAPI_BUILD_HIDTEST OFF CACHE BOOL "Build hidapi hidtest utility" FORCE)
@@ -34,7 +36,7 @@ unset(_SIGNALBRIDGE_AUTOUIC)
 unset(_SIGNALBRIDGE_AUTOMOC)
 unset(_SIGNALBRIDGE_AUTORCC)
 
-set(TS_FILES translations/SignalBridgePlugin_en_US.ts)
+# set(TS_FILES translations/SignalBridgePlugin_en_US.ts)
 file(GLOB SIGNALBRIDGE_SIGNALRGB_SOURCES CONFIGURE_DEPENDS
   "${CMAKE_CURRENT_SOURCE_DIR}/src/runtime/signalrgb/*.cpp"
   "${CMAKE_CURRENT_SOURCE_DIR}/src/runtime/signalrgb/*.h"
@@ -105,7 +107,6 @@ target_sources(SignalBridgePlugin PRIVATE
   src/ui/ScriptTableView.h
   src/ui/SignalBridgeWidget.cpp
   src/ui/SignalBridgeWidget.h
-  ${TS_FILES}
 )
 
 target_link_libraries(SignalBridgePlugin PRIVATE Qt${QT_VERSION_MAJOR}::Widgets Qt${QT_VERSION_MAJOR}::SerialPort hidapi::hidapi qjs)
@@ -127,11 +128,11 @@ if(MSVC)
     target_compile_options(SignalBridgePlugin PRIVATE /FS)
 endif()
 
-if(COMMAND qt_create_translation)
-    qt_create_translation(QM_FILES ${CMAKE_SOURCE_DIR} ${TS_FILES})
-else()
-    qt5_create_translation(QM_FILES ${CMAKE_SOURCE_DIR} ${TS_FILES})
-endif()
+# if(COMMAND qt_create_translation)
+#     qt_create_translation(QM_FILES ${CMAKE_SOURCE_DIR} ${TS_FILES})
+# else()
+#     qt5_create_translation(QM_FILES ${CMAKE_SOURCE_DIR} ${TS_FILES})
+# endif()
 
 option(SIGNALBRIDGE_BUILD_TESTS "Build SignalBridge focused core tests" ON)
 
