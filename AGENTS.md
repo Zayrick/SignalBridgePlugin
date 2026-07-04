@@ -47,7 +47,7 @@ JOM is installed at `C:\Qt\Tools\QtCreator\bin\jom\jom.exe` and can be used for 
 
 ### Discovery Pipeline
 Device discovery runs in a background thread and follows this flow:
-1. **ScriptScanner** - finds `.js` files in `%PROGRAMDATA%/SignalRgb/Plugins/`
+1. **ScriptScanner** - finds user-provided `.js` files in OpenRGB's configuration directory under `SignalBridge/scripts/` (default Windows path: `%APPDATA%/OpenRGB/SignalBridge/scripts/`)
 2. **ScriptMetadataExtractor** - creates minimal QuickJS runtimes to extract script metadata (vendor, product, model)
 3. **DiscoveryService** - orchestrates the scan, matches scripts to connected HID devices, creates controllers
 4. **ControllerRegistry** - owns SignalBridgeController instances, registers them with OpenRGB's ResourceManager
