@@ -8,15 +8,16 @@ set(CMAKE_AUTORCC ON)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-find_package(QT NAMES Qt6 Qt5 REQUIRED COMPONENTS Widgets SerialPort)
-find_package(Qt${QT_VERSION_MAJOR} REQUIRED COMPONENTS Widgets SerialPort)
-# find_package(QT NAMES Qt6 Qt5 REQUIRED COMPONENTS Widgets SerialPort LinguistTools)
-# find_package(Qt${QT_VERSION_MAJOR} REQUIRED COMPONENTS Widgets SerialPort LinguistTools)
+find_package(QT NAMES Qt6 Qt5 REQUIRED COMPONENTS Widgets)
+find_package(Qt${QT_VERSION_MAJOR} REQUIRED COMPONENTS Widgets)
+# find_package(QT NAMES Qt6 Qt5 REQUIRED COMPONENTS Widgets LinguistTools)
+# find_package(Qt${QT_VERSION_MAJOR} REQUIRED COMPONENTS Widgets LinguistTools)
 
 set(BUILD_SHARED_LIBS OFF CACHE BOOL "Build third-party libraries as static libraries" FORCE)
 set(HIDAPI_BUILD_HIDTEST OFF CACHE BOOL "Build hidapi hidtest utility" FORCE)
 set(HIDAPI_INSTALL_TARGETS OFF CACHE BOOL "Install hidapi targets" FORCE)
 set(HIDAPI_WITH_TESTS OFF CACHE BOOL "Build hidapi tests" FORCE)
+set(CSERIALPORT_ENABLE_UTF8 ON CACHE BOOL "Use UTF-8 strings from CSerialPort" FORCE)
 set(QJS_BUILD_EXAMPLES OFF CACHE BOOL "Build QuickJS examples" FORCE)
 set(QJS_BUILD_LIBC OFF CACHE BOOL "Build QuickJS libc support" FORCE)
 set(QJS_ENABLE_INSTALL OFF CACHE BOOL "Install QuickJS targets" FORCE)
@@ -29,6 +30,7 @@ set(CMAKE_AUTOMOC OFF)
 set(CMAKE_AUTORCC OFF)
 add_subdirectory(third_party/hidapi EXCLUDE_FROM_ALL)
 add_subdirectory(third_party/quickjs EXCLUDE_FROM_ALL)
+add_subdirectory(third_party/CSerialPort EXCLUDE_FROM_ALL)
 set(CMAKE_AUTOUIC ${_SIGNALBRIDGE_AUTOUIC})
 set(CMAKE_AUTOMOC ${_SIGNALBRIDGE_AUTOMOC})
 set(CMAKE_AUTORCC ${_SIGNALBRIDGE_AUTORCC})
@@ -46,7 +48,6 @@ add_library(SignalBridgePlugin SHARED)
 
 target_sources(SignalBridgePlugin PRIVATE
   OpenRGB/RGBController/RGBController.cpp
-  OpenRGB/serial_port/serial_port.h
   include/SignalBridge/SignalBridgePlugin.h
   include/SignalBridge/SignalBridgePlugin_global.h
   src/SignalBridgePlugin.cpp
@@ -90,7 +91,6 @@ target_sources(SignalBridgePlugin PRIVATE
   src/runtime/RuntimeBindings.h
   src/runtime/SignalRgbRuntimeFactory.cpp
   src/runtime/SignalRgbRuntimeFactory.h
-  src/serial/OpenRgbSerialPort.cpp
   src/serial/SerialBackend.cpp
   src/serial/SerialBackend.h
   src/serial/SerialTypes.h
@@ -109,13 +109,14 @@ target_sources(SignalBridgePlugin PRIVATE
   src/ui/SignalBridgeWidget.h
 )
 
-target_link_libraries(SignalBridgePlugin PRIVATE Qt${QT_VERSION_MAJOR}::Widgets Qt${QT_VERSION_MAJOR}::SerialPort hidapi::hidapi qjs)
+target_link_libraries(SignalBridgePlugin PRIVATE Qt${QT_VERSION_MAJOR}::Widgets hidapi::hidapi qjs libcserialport)
 
 target_include_directories(SignalBridgePlugin PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/include
     ${CMAKE_CURRENT_SOURCE_DIR}/src
     ${CMAKE_CURRENT_SOURCE_DIR}/OpenRGB
     ${CMAKE_CURRENT_SOURCE_DIR}/OpenRGB/i2c_smbus
+    ${CMAKE_CURRENT_SOURCE_DIR}/third_party/CSerialPort/include
 )
 
 target_compile_definitions(SignalBridgePlugin PRIVATE
@@ -142,7 +143,6 @@ if(SIGNALBRIDGE_BUILD_TESTS)
     add_executable(SignalBridgeCoreTests)
     target_sources(SignalBridgeCoreTests PRIVATE
         OpenRGB/RGBController/RGBController.cpp
-        OpenRGB/serial_port/serial_port.h
         tests/SignalBridgeCoreTests.cpp
         src/config/DeviceConfigStore.cpp
         src/config/DeviceConfigStore.h
@@ -174,13 +174,12 @@ if(SIGNALBRIDGE_BUILD_TESTS)
         src/runtime/RuntimeBindings.h
         src/runtime/SignalRgbRuntimeFactory.cpp
         src/runtime/SignalRgbRuntimeFactory.h
-        src/serial/OpenRgbSerialPort.cpp
         src/serial/SerialBackend.cpp
         src/serial/SerialBackend.h
         src/serial/SerialTypes.h
         ${SIGNALBRIDGE_SIGNALRGB_SOURCES}
     )
-    target_link_libraries(SignalBridgeCoreTests PRIVATE Qt${QT_VERSION_MAJOR}::Widgets Qt${QT_VERSION_MAJOR}::SerialPort hidapi::hidapi qjs)
+    target_link_libraries(SignalBridgeCoreTests PRIVATE Qt${QT_VERSION_MAJOR}::Widgets hidapi::hidapi qjs libcserialport)
     if(MSVC)
         target_compile_options(SignalBridgeCoreTests PRIVATE /FS)
     endif()
@@ -189,6 +188,7 @@ if(SIGNALBRIDGE_BUILD_TESTS)
         ${CMAKE_CURRENT_SOURCE_DIR}/src
         ${CMAKE_CURRENT_SOURCE_DIR}/OpenRGB
         ${CMAKE_CURRENT_SOURCE_DIR}/OpenRGB/i2c_smbus
+        ${CMAKE_CURRENT_SOURCE_DIR}/third_party/CSerialPort/include
     )
     add_test(
         NAME SignalBridgeCoreTests
