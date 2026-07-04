@@ -35,12 +35,15 @@ unset(_SIGNALBRIDGE_AUTOMOC)
 unset(_SIGNALBRIDGE_AUTORCC)
 
 set(TS_FILES translations/SignalBridgePlugin_en_US.ts)
+file(GLOB SIGNALBRIDGE_SIGNALRGB_SOURCES CONFIGURE_DEPENDS
+  "${CMAKE_CURRENT_SOURCE_DIR}/src/runtime/signalrgb/*.cpp"
+  "${CMAKE_CURRENT_SOURCE_DIR}/src/runtime/signalrgb/*.h"
+)
 
 add_library(SignalBridgePlugin SHARED)
 
 target_sources(SignalBridgePlugin PRIVATE
   OpenRGB/RGBController/RGBController.cpp
-  resources/SignalBridgeResources.qrc
   include/SignalBridge/SignalBridgePlugin.h
   include/SignalBridge/SignalBridgePlugin_global.h
   src/SignalBridgePlugin.cpp
@@ -78,10 +81,13 @@ target_sources(SignalBridgePlugin PRIVATE
   src/runtime/QuickJsRuntime.h
   src/runtime/QuickJsValue.cpp
   src/runtime/QuickJsValue.h
+  src/runtime/RuntimeBindingUtils.cpp
+  src/runtime/RuntimeBindingUtils.h
   src/runtime/RuntimeBindings.cpp
   src/runtime/RuntimeBindings.h
   src/runtime/SignalRgbRuntimeFactory.cpp
   src/runtime/SignalRgbRuntimeFactory.h
+  ${SIGNALBRIDGE_SIGNALRGB_SOURCES}
   src/scanning/ScriptMetadataExtractor.cpp
   src/scanning/ScriptMetadataExtractor.h
   src/scanning/ScriptScanner.cpp
@@ -130,7 +136,6 @@ if(SIGNALBRIDGE_BUILD_TESTS)
     add_executable(SignalBridgeCoreTests)
     target_sources(SignalBridgeCoreTests PRIVATE
         OpenRGB/RGBController/RGBController.cpp
-        resources/SignalBridgeResources.qrc
         tests/SignalBridgeCoreTests.cpp
         src/config/DeviceConfigStore.cpp
         src/config/DeviceConfigStore.h
@@ -156,10 +161,13 @@ if(SIGNALBRIDGE_BUILD_TESTS)
         src/runtime/QuickJsRuntime.h
         src/runtime/QuickJsValue.cpp
         src/runtime/QuickJsValue.h
+        src/runtime/RuntimeBindingUtils.cpp
+        src/runtime/RuntimeBindingUtils.h
         src/runtime/RuntimeBindings.cpp
         src/runtime/RuntimeBindings.h
         src/runtime/SignalRgbRuntimeFactory.cpp
         src/runtime/SignalRgbRuntimeFactory.h
+        ${SIGNALBRIDGE_SIGNALRGB_SOURCES}
     )
     target_link_libraries(SignalBridgeCoreTests PRIVATE Qt${QT_VERSION_MAJOR}::Widgets hidapi::hidapi qjs)
     if(MSVC)

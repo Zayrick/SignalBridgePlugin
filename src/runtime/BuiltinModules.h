@@ -3,12 +3,14 @@
 
 #include <string>
 
+struct JSContext;
+struct JSModuleDef;
+
 namespace signalbridge
 {
 std::string NormalizeBuiltinSpecifier(std::string specifier);
 bool IsBuiltinModule(const std::string& specifier);
-std::string BuiltinModuleSource(const std::string& specifier);
-std::string LoadRuntimeResourceText(const std::string& relative_path);
+JSModuleDef* LoadBuiltinModule(JSContext* context, const std::string& specifier);
 }
 
 #endif // SIGNALBRIDGE_BUILTIN_MODULES_H

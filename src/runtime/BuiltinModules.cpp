@@ -1,9 +1,10 @@
 #include "runtime/BuiltinModules.h"
 
-#include <stdexcept>
+#include "runtime/signalrgb/SignalRgbModuleRegistry.h"
 
-#include <QFile>
-#include <QString>
+extern "C" {
+#include "quickjs.h"
+}
 
 namespace signalbridge
 {
@@ -15,9 +16,10 @@ bool StartsWith(const std::string& value, const char* prefix)
     return value.size() >= expected.size() && value.substr(0, expected.size()) == expected;
 }
 
-std::string BuiltinResourcePath(const std::string& normalized)
+JSModuleDef* ThrowUnknownBuiltin(JSContext* context, const std::string& specifier)
 {
-    return normalized + ".js";
+    JS_ThrowReferenceError(context, "unknown SignalRGB builtin module '%s'", specifier.c_str());
+    return nullptr;
 }
 }
 
@@ -36,24 +38,13 @@ bool IsBuiltinModule(const std::string& specifier)
     return StartsWith(normalized, "@SignalRGB/");
 }
 
-std::string BuiltinModuleSource(const std::string& specifier)
+JSModuleDef* LoadBuiltinModule(JSContext* context, const std::string& specifier)
 {
     const std::string normalized = NormalizeBuiltinSpecifier(specifier);
     if(!IsBuiltinModule(normalized))
     {
-        return {};
+        return ThrowUnknownBuiltin(context, specifier);
     }
-    return LoadRuntimeResourceText(BuiltinResourcePath(normalized));
-}
-
-std::string LoadRuntimeResourceText(const std::string& relative_path)
-{
-    const QString path = QStringLiteral(":/SignalBridge/") + QString::fromStdString(relative_path);
-    QFile file(path);
-    if(!file.open(QIODevice::ReadOnly | QIODevice::Text))
-    {
-        throw std::runtime_error("Failed to read " + path.toStdString());
-    }
-    return QString::fromUtf8(file.readAll()).toStdString();
+    return LoadRegisteredSignalRgbModule(context, normalized.c_str());
 }
 }

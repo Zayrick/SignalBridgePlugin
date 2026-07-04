@@ -6,19 +6,17 @@
 #include <cmath>
 #include <cstdio>
 #include <sstream>
-#include <stdexcept>
 #include <thread>
 
-#include <QDate>
 #include <QJsonArray>
-#include <QJsonDocument>
 #include <QJsonObject>
-#include <QSettings>
-#include <QStringList>
-#include <QVariant>
 
 #include "domain/ControlParameters.h"
+#include "runtime/RuntimeBindingUtils.h"
 #include "runtime/QuickJsValue.h"
+#include "runtime/signalrgb/SignalRgbEnvironmentGlobals.h"
+#include "runtime/signalrgb/SignalRgbModuleRegistry.h"
+#include "runtime/signalrgb/SystemInfoModule.h"
 
 namespace signalbridge
 {
@@ -41,184 +39,6 @@ std::string FindEndpointHandleKey(int interface_number, int usage, int usage_pag
 bool UsagePagesCompatible(int a, int b)
 {
     return a == b || (a >= 0xFF00 && b >= 0xFF00);
-}
-
-QString ReadSettingsString(QSettings& settings, const char* key)
-{
-    const QVariant value = settings.value(QString::fromLatin1(key));
-    if(!value.isValid() || value.isNull())
-    {
-        return QString();
-    }
-
-    QString text = value.toString().trimmed();
-    if(!text.isEmpty())
-    {
-        return text;
-    }
-
-    const QStringList values = value.toStringList();
-    for(const QString& item : values)
-    {
-        const QString trimmed = item.trimmed();
-        if(!trimmed.isEmpty())
-        {
-            if(!text.isEmpty())
-            {
-                text += QStringLiteral(" ");
-            }
-            text += trimmed;
-        }
-    }
-    return text;
-}
-
-QString NormalizeBiosDate(const QString& raw)
-{
-    const QString text = raw.trimmed();
-    if(text.isEmpty())
-    {
-        return QString();
-    }
-
-    if(text.size() >= 8)
-    {
-        bool digits = true;
-        for(int idx = 0; idx < 8; idx++)
-        {
-            if(!text.at(idx).isDigit())
-            {
-                digits = false;
-                break;
-            }
-        }
-        if(digits)
-        {
-            const QDate date = QDate::fromString(text.left(8), QStringLiteral("yyyyMMdd"));
-            if(date.isValid())
-            {
-                return date.toString(Qt::ISODate);
-            }
-        }
-    }
-
-    const QStringList formats = {
-        QStringLiteral("MM/dd/yyyy"),
-        QStringLiteral("M/d/yyyy"),
-        QStringLiteral("yyyy-MM-dd"),
-        QStringLiteral("dd.MM.yyyy"),
-    };
-    for(const QString& format : formats)
-    {
-        const QDate date = QDate::fromString(text, format);
-        if(date.isValid())
-        {
-            return date.toString(Qt::ISODate);
-        }
-    }
-    return text;
-}
-
-QJsonObject MotherboardInfo()
-{
-    QString manufacturer;
-    QString product;
-    QString version;
-
-#ifdef Q_OS_WIN
-    QSettings bios(
-        QStringLiteral("HKEY_LOCAL_MACHINE\\HARDWARE\\DESCRIPTION\\System\\BIOS"),
-        QSettings::NativeFormat);
-    manufacturer = ReadSettingsString(bios, "BaseBoardManufacturer");
-    product = ReadSettingsString(bios, "BaseBoardProduct");
-    version = ReadSettingsString(bios, "BaseBoardVersion");
-#endif
-
-    QJsonObject info;
-    info.insert(QStringLiteral("model"), product);
-    info.insert(QStringLiteral("manufacturer"), manufacturer);
-    info.insert(QStringLiteral("product"), product);
-    info.insert(QStringLiteral("vendor"), manufacturer);
-    if(!version.isEmpty())
-    {
-        info.insert(QStringLiteral("version"), version);
-    }
-    return info;
-}
-
-QJsonObject BiosInfo()
-{
-    QString vendor;
-    QString version;
-    QString raw_date;
-
-#ifdef Q_OS_WIN
-    QSettings bios(
-        QStringLiteral("HKEY_LOCAL_MACHINE\\HARDWARE\\DESCRIPTION\\System\\BIOS"),
-        QSettings::NativeFormat);
-    vendor = ReadSettingsString(bios, "BIOSVendor");
-    version = ReadSettingsString(bios, "BIOSVersion");
-    raw_date = ReadSettingsString(bios, "BIOSReleaseDate");
-#endif
-
-    const QString release_date = NormalizeBiosDate(raw_date);
-    QJsonObject info;
-    info.insert(QStringLiteral("vendor"), vendor);
-    info.insert(QStringLiteral("version"), version);
-    info.insert(QStringLiteral("date"), raw_date);
-    info.insert(QStringLiteral("releaseDate"), release_date);
-    return info;
-}
-
-QJsonObject RamInfo()
-{
-    QJsonObject info;
-    info.insert(QStringLiteral("totalMemory"), 0);
-    info.insert(QStringLiteral("modules"), QJsonArray());
-    return info;
-}
-
-void SetFunctionProperty(JSContext* context, JSValue object, const char* name, JSCFunction* function, int argc = 0)
-{
-    JSValue js_function = JS_NewCFunction(context, function, name, argc);
-    if(JS_SetPropertyStr(context, object, name, js_function) < 0)
-    {
-        throw std::runtime_error(std::string("failed to register function ") + name);
-    }
-}
-
-void SetValueProperty(JSContext* context, JSValue object, const char* name, JSValue value)
-{
-    if(JS_SetPropertyStr(context, object, name, value) < 0)
-    {
-        throw std::runtime_error(std::string("failed to set property ") + name);
-    }
-}
-
-void SetGlobalProperty(JSContext* context, const char* name, JSValue value)
-{
-    JSValue global = JS_GetGlobalObject(context);
-    if(JS_SetPropertyStr(context, global, name, value) < 0)
-    {
-        JS_FreeValue(context, global);
-        throw std::runtime_error(std::string("failed to set global ") + name);
-    }
-    JS_FreeValue(context, global);
-}
-
-std::string JsToString(JSContext* context, JSValueConst value, const std::string& fallback = {})
-{
-    if(JS_IsUndefined(value) || JS_IsNull(value))
-    {
-        return fallback;
-    }
-    const char* text = JS_ToCString(context, value);
-    std::string result = text != nullptr ? text : fallback;
-    if(text != nullptr)
-    {
-        JS_FreeCString(context, text);
-    }
-    return result;
 }
 
 std::string FormatJsValue(JSContext* context, JSValueConst value)
@@ -866,21 +686,6 @@ JSValue ConsoleErrorJs(JSContext* context, JSValueConst, int argc, JSValueConst*
     return JS_UNDEFINED;
 }
 
-JSValue GetMotherboardInfoJs(JSContext* context, JSValueConst, int, JSValueConst*)
-{
-    return JsonToJsValue(context, MotherboardInfo(), "<systeminfo-motherboard>");
-}
-
-JSValue GetBiosInfoJs(JSContext* context, JSValueConst, int, JSValueConst*)
-{
-    return JsonToJsValue(context, BiosInfo(), "<systeminfo-bios>");
-}
-
-JSValue GetRamInfoJs(JSContext* context, JSValueConst, int, JSValueConst*)
-{
-    return JsonToJsValue(context, RamInfo(), "<systeminfo-ram>");
-}
-
 JSValue DeviceGetHidInfoJs(JSContext* context, JSValueConst, int, JSValueConst*)
 {
     RuntimeCallbackState* state = RuntimeCallbacks(context);
@@ -904,31 +709,6 @@ JSValue DeviceGetDeviceInfoJs(JSContext* context, JSValueConst, int, JSValueCons
         info.insert("name", QString::fromStdString(state->device.name));
     }
     return JsonToJsValue(context, info, "<device-info>");
-}
-
-JSValue EmptyArrayJs(JSContext* context, JSValueConst, int, JSValueConst*)
-{
-    return JS_NewArray(context);
-}
-
-JSValue UndefinedJs(JSContext*, JSValueConst, int, JSValueConst*)
-{
-    return JS_UNDEFINED;
-}
-
-JSValue ZeroJs(JSContext* context, JSValueConst, int, JSValueConst*)
-{
-    return JS_NewInt32(context, 0);
-}
-
-JSValue HundredJs(JSContext* context, JSValueConst, int, JSValueConst*)
-{
-    return JS_NewInt32(context, 100);
-}
-
-JSValue FalseJs(JSContext* context, JSValueConst, int, JSValueConst*)
-{
-    return JS_NewBool(context, false);
 }
 
 JSValue DeviceColorJs(JSContext* context, JSValueConst, int argc, JSValueConst* argv)
@@ -1584,89 +1364,6 @@ JSValue DeviceGetCurrentSubdevicesJs(JSContext* context, JSValueConst, int, JSVa
     return JsonToJsValue(context, names, "<subdevices>");
 }
 
-JSValue GlobalContextSetJs(JSContext* context, JSValueConst, int argc, JSValueConst* argv)
-{
-    RuntimeCallbackState* state = RuntimeCallbacks(context);
-    if(state != nullptr && argc >= 2)
-    {
-        state->global_context[JsToString(context, argv[0])] = JsValueToJson(context, argv[1]);
-    }
-    return JS_UNDEFINED;
-}
-
-JSValue GlobalContextGetJs(JSContext* context, JSValueConst, int argc, JSValueConst* argv)
-{
-    RuntimeCallbackState* state = RuntimeCallbacks(context);
-    if(state == nullptr || argc < 1)
-    {
-        return JS_UNDEFINED;
-    }
-    const auto it = state->global_context.find(JsToString(context, argv[0]));
-    return it != state->global_context.end() ? JsonToJsValue(context, it->second, "<globalContext>") : JS_UNDEFINED;
-}
-
-JSValue GlobalContextHasJs(JSContext* context, JSValueConst, int argc, JSValueConst* argv)
-{
-    RuntimeCallbackState* state = RuntimeCallbacks(context);
-    return JS_NewBool(context, state != nullptr && argc >= 1 && state->global_context.count(JsToString(context, argv[0])) > 0);
-}
-
-JSValue GlobalContextClearJs(JSContext* context, JSValueConst, int argc, JSValueConst* argv)
-{
-    RuntimeCallbackState* state = RuntimeCallbacks(context);
-    if(state != nullptr && argc >= 1)
-    {
-        state->global_context.erase(JsToString(context, argv[0]));
-    }
-    return JS_UNDEFINED;
-}
-
-std::string AssertMessage(JSContext* context, int argc, JSValueConst* argv, int index, const char* fallback)
-{
-    return argc > index ? JsToString(context, argv[index], fallback) : std::string(fallback);
-}
-
-JSValue ContextErrorJs(JSContext* context, JSValueConst, int argc, JSValueConst* argv)
-{
-    JSValue object = JS_NewObject(context);
-    SetValueProperty(context, object, "message", JS_NewString(context, AssertMessage(context, argc, argv, 0, "").c_str()));
-    SetValueProperty(context, object, "name", JS_NewString(context, "ContextError"));
-    return object;
-}
-
-JSValue AssertIsOkJs(JSContext* context, JSValueConst, int argc, JSValueConst* argv)
-{
-    if(argc < 1 || JS_ToBool(context, argv[0]) == 0)
-    {
-        return JS_ThrowInternalError(context, "%s", AssertMessage(context, argc, argv, 1, "Assertion failed").c_str());
-    }
-    return JS_UNDEFINED;
-}
-
-JSValue AssertFailJs(JSContext* context, JSValueConst, int argc, JSValueConst* argv)
-{
-    return JS_ThrowInternalError(context, "%s", AssertMessage(context, argc, argv, 0, "Assertion failed").c_str());
-}
-
-JSValue AssertUnreachableJs(JSContext* context, JSValueConst, int argc, JSValueConst* argv)
-{
-    return JS_ThrowInternalError(context, "%s", AssertMessage(context, argc, argv, 0, "Unreachable").c_str());
-}
-
-JSValue AssertIsEqualJs(JSContext* context, JSValueConst, int argc, JSValueConst* argv)
-{
-    if(argc < 2 || !JS_IsSameValue(context, argv[0], argv[1]))
-    {
-        return JS_ThrowInternalError(context, "%s", AssertMessage(context, argc, argv, 2, "Assertion failed").c_str());
-    }
-    return JS_UNDEFINED;
-}
-
-JSValue AssertSoftIsDefinedJs(JSContext* context, JSValueConst, int argc, JSValueConst* argv)
-{
-    return JS_NewBool(context, argc > 0 && !JS_IsUndefined(argv[0]) && !JS_IsNull(argv[0]));
-}
-
 void RegisterConsole(JSContext* context)
 {
     JSValue object = JS_NewObject(context);
@@ -1675,73 +1372,6 @@ void RegisterConsole(JSContext* context)
     SetFunctionProperty(context, object, "warn", ConsoleWarnJs);
     SetFunctionProperty(context, object, "error", ConsoleErrorJs);
     SetGlobalProperty(context, "console", object);
-}
-
-void RegisterSystemInfo(JSContext* context)
-{
-    JSValue object = JS_NewObject(context);
-    SetFunctionProperty(context, object, "GetMotherboardInfo", GetMotherboardInfoJs);
-    SetFunctionProperty(context, object, "GetBiosInfo", GetBiosInfoJs);
-    SetFunctionProperty(context, object, "GetRamInfo", GetRamInfoJs);
-    SetGlobalProperty(context, "systeminfo", object);
-}
-
-void RegisterErrors(JSContext* context)
-{
-    JSValue context_error = JS_NewCFunction2(context, ContextErrorJs, "ContextError", 1, JS_CFUNC_constructor_or_func, 0);
-    SetGlobalProperty(context, "ContextError", context_error);
-
-    JSValue assert = JS_NewObject(context);
-    SetFunctionProperty(context, assert, "isOk", AssertIsOkJs, 2);
-    SetFunctionProperty(context, assert, "fail", AssertFailJs, 1);
-    SetFunctionProperty(context, assert, "unreachable", AssertUnreachableJs, 1);
-    SetFunctionProperty(context, assert, "isEqual", AssertIsEqualJs, 3);
-    SetFunctionProperty(context, assert, "softIsDefined", AssertSoftIsDefinedJs, 1);
-    SetGlobalProperty(context, "Assert", assert);
-}
-
-void RegisterGlobalContext(JSContext* context)
-{
-    JSValue object = JS_NewObject(context);
-    SetFunctionProperty(context, object, "set", GlobalContextSetJs, 2);
-    SetFunctionProperty(context, object, "get", GlobalContextGetJs, 1);
-    SetFunctionProperty(context, object, "has", GlobalContextHasJs, 1);
-    SetFunctionProperty(context, object, "clear", GlobalContextClearJs, 1);
-    SetGlobalProperty(context, "globalContext", object);
-}
-
-void RegisterSignalRgbStubs(JSContext* context)
-{
-    JSValue discovery = JS_NewObject(context);
-    SetFunctionProperty(context, discovery, "foundVirtualDevice", UndefinedJs);
-    SetGlobalProperty(context, "DeviceDiscovery", discovery);
-
-    JSValue permissions = JS_NewObject(context);
-    SetFunctionProperty(context, permissions, "permissions", EmptyArrayJs);
-    SetFunctionProperty(context, permissions, "setCallback", UndefinedJs);
-    SetGlobalProperty(context, "permissions", permissions);
-
-    JSValue lcd = JS_NewObject(context);
-    SetFunctionProperty(context, lcd, "initialize", UndefinedJs);
-    SetFunctionProperty(context, lcd, "getFrame", EmptyArrayJs);
-    SetGlobalProperty(context, "LCD", lcd);
-
-    JSValue battery = JS_NewObject(context);
-    SetFunctionProperty(context, battery, "setBatteryLevel", UndefinedJs);
-    SetFunctionProperty(context, battery, "setBatteryState", UndefinedJs);
-    SetGlobalProperty(context, "battery", battery);
-
-    JSValue keyboard = JS_NewObject(context);
-    SetFunctionProperty(context, keyboard, "sendEvent", UndefinedJs);
-    SetFunctionProperty(context, keyboard, "sendHid", UndefinedJs);
-    SetGlobalProperty(context, "keyboard", keyboard);
-
-    JSValue mouse = JS_NewObject(context);
-    SetFunctionProperty(context, mouse, "sendEvent", UndefinedJs);
-    SetGlobalProperty(context, "mouse", mouse);
-
-    SetGlobalProperty(context, "LightingMode", JS_NewString(context, "Canvas"));
-    SetGlobalProperty(context, "forcedColor", JS_NewString(context, "#000000"));
 }
 
 void RegisterDevice(JSContext* context)
@@ -1809,17 +1439,17 @@ void RegisterDevice(JSContext* context)
 
 JSValue HostGetMotherboardInfoJs(JSContext* context, JSValueConst, int, JSValueConst*)
 {
-    return GetMotherboardInfoJs(context, JS_UNDEFINED, 0, nullptr);
+    return JsonToJsValue(context, MotherboardInfo(), "<systeminfo-motherboard>");
 }
 
 JSValue HostGetBiosInfoJs(JSContext* context, JSValueConst, int, JSValueConst*)
 {
-    return GetBiosInfoJs(context, JS_UNDEFINED, 0, nullptr);
+    return JsonToJsValue(context, BiosInfo(), "<systeminfo-bios>");
 }
 
 JSValue HostGetRamInfoJs(JSContext* context, JSValueConst, int, JSValueConst*)
 {
-    return GetRamInfoJs(context, JS_UNDEFINED, 0, nullptr);
+    return JsonToJsValue(context, RamInfo(), "<systeminfo-ram>");
 }
 
 JSValue HostGetHidInfoJs(JSContext* context, JSValueConst, int, JSValueConst*)
@@ -1869,10 +1499,8 @@ int HostModuleInit(JSContext* context, JSModuleDef* module)
 void RegisterRuntimeCallbacks(JSContext* context)
 {
     RegisterConsole(context);
-    RegisterErrors(context);
-    RegisterGlobalContext(context);
-    RegisterSignalRgbStubs(context);
-    RegisterSystemInfo(context);
+    RegisterSignalRgbPackageGlobals(context);
+    RegisterSignalRgbEnvironmentGlobals(context);
     RegisterDevice(context);
 }
 

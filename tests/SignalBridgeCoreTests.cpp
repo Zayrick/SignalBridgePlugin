@@ -213,6 +213,70 @@ export function ReadSystemInfo() {
            Check(bios.contains("releaseDate"), "bios info exposes SignalRGB releaseDate field");
 }
 
+bool TestSignalRgbBuiltinModules()
+{
+    using namespace signalbridge;
+
+    const std::string lookup = "builtin-modules-test.js";
+    const std::string source = R"JS(
+import DeviceDiscovery from "@SignalRGB/DeviceDiscovery";
+import errors, { Assert, ContextError, globalContext } from "@SignalRGB/Errors";
+import LCD from "@SignalRGB/lcd";
+import permissions from "@SignalRGB/permissions";
+import serial, { serial as namedSerial } from "@SignalRGB/serial";
+
+export function ProbeBuiltins() {
+    globalContext.set("answer", 42);
+    const contextError = ContextError("broken");
+    return {
+        discoveryGlobal: DeviceDiscovery === globalThis.DeviceDiscovery,
+        discoveryCall: DeviceDiscovery.foundVirtualDevice() === undefined,
+        sameAssert: errors.Assert === Assert,
+        contextErrorName: contextError.name,
+        contextErrorMessage: contextError.message,
+        globalContextValue: globalContext.get("answer"),
+        lcdGlobal: LCD === globalThis.LCD,
+        lcdFrameEmpty: LCD.getFrame().length === 0,
+        permissionsGlobal: permissions === globalThis.permissions,
+        permissionsEmpty: permissions.permissions().length === 0,
+        serialSameExport: serial === namedSerial,
+        serialPortsEmpty: serial.availablePorts().length === 0,
+        serialInfoEmpty: Object.keys(serial.getDeviceInfo()).length === 0,
+        serialConnectFalse: serial.connect() === false,
+        serialConnectedFalse: serial.isConnected() === false,
+        serialWriteFalse: serial.write([1]) === false,
+        serialReadEmpty: serial.read().length === 0,
+        serialGlobalAbsent: globalThis.serial === undefined,
+    };
+}
+)JS";
+
+    QuickJsRuntime runtime = SignalRgbRuntimeFactory::CreateScan();
+    runtime.LoadModule(lookup, { ScriptSource{ lookup, lookup, source } });
+    runtime.EvaluateModule();
+
+    const QJsonObject info = runtime.CallModuleExportJson("ProbeBuiltins").toObject();
+    return Check(info.value("discoveryGlobal").toBool(false), "DeviceDiscovery module reuses compatibility global") &&
+           Check(info.value("discoveryCall").toBool(false), "DeviceDiscovery compatibility method is callable") &&
+           Check(info.value("sameAssert").toBool(false), "Errors module default and named Assert share implementation") &&
+           Check(info.value("contextErrorName").toString() == "ContextError", "ContextError exposes SignalRGB name") &&
+           Check(info.value("contextErrorMessage").toString() == "broken", "ContextError preserves message") &&
+           Check(info.value("globalContextValue").toInt() == 42, "globalContext stores values in runtime state") &&
+           Check(info.value("lcdGlobal").toBool(false), "LCD module reuses compatibility global") &&
+           Check(info.value("lcdFrameEmpty").toBool(false), "LCD compatibility frame is empty") &&
+           Check(info.value("permissionsGlobal").toBool(false), "permissions module reuses compatibility global") &&
+           Check(info.value("permissionsEmpty").toBool(false), "permissions compatibility list is empty") &&
+           Check(info.value("serialSameExport").toBool(false), "serial default and named exports share implementation") &&
+           Check(info.value("serialPortsEmpty").toBool(false), "serial availablePorts remains empty") &&
+           Check(info.value("serialInfoEmpty").toBool(false), "serial getDeviceInfo remains empty") &&
+           Check(info.value("serialConnectFalse").toBool(false), "serial connect remains unavailable") &&
+           Check(info.value("serialConnectedFalse").toBool(false), "serial isConnected remains false") &&
+           Check(info.value("serialWriteFalse").toBool(false), "serial write remains unavailable") &&
+           Check(info.value("serialReadEmpty").toBool(false), "serial read remains empty") &&
+           Check(info.value("serialGlobalAbsent").toBool(false), "serial import does not create a global serial object") &&
+           Check(runtime.LoadedModuleSources().size() == 1, "native builtin modules are not recorded as user script sources");
+}
+
 bool TestNativeScanRuntime()
 {
     using namespace signalbridge;
@@ -433,6 +497,7 @@ int main()
     ok = TestControlParameters() && ok;
     ok = TestDeviceConfigStore() && ok;
     ok = TestSystemInfoModule() && ok;
+    ok = TestSignalRgbBuiltinModules() && ok;
     ok = TestNativeScanRuntime() && ok;
     ok = TestNativeDeviceRuntime() && ok;
     ok = TestRuntimeConfigurationCallbacks() && ok;

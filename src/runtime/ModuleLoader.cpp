@@ -134,9 +134,7 @@ JSModuleDef* LoadModule(JSContext* context, const char* module_name, void* opaqu
 
     if(IsBuiltinModule(name))
     {
-        const std::string normalized = NormalizeBuiltinSpecifier(name);
-        const std::string source = BuiltinModuleSource(normalized);
-        return CompileModule(context, normalized, source);
+        return LoadBuiltinModule(context, name);
     }
 
     const ScriptSource* source = state->Find(name);

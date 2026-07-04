@@ -143,7 +143,8 @@ SignalBridgePlugin (OpenRGB Interface)
 ### JavaScript Runtime
 - **SignalRgbRuntimeFactory**: Creates configured QuickJS runtime instances
 - **RuntimeBindings**: Provides SignalRGB API (`device.log()`, `device.read()`, `device.write()`)
-- **ModuleLoader**: Loads scripts as ES6 modules
+- **BuiltinModules**: Resolves native C++ modules self-registered from `src/runtime/signalrgb`
+- **ModuleLoader**: Loads user scripts and native built-ins as ES6 modules
 - Scripts export functions: `Name()`, `Initialize()`, `Render()`, `Shutdown()`
 
 ### Data Flow
@@ -172,6 +173,7 @@ SignalBridgePlugin/
 ├── src/
 │   ├── domain/              # Core types (ControlParameters, DeviceRecords)
 │   ├── runtime/             # QuickJS integration, bindings
+│   │   └── signalrgb/       # Self-registering native @SignalRGB/* modules
 │   ├── scanning/            # Script discovery, metadata extraction
 │   ├── discovery/           # Device discovery orchestration
 │   ├── openrgb/             # OpenRGB integration (controllers, mapping)
@@ -180,8 +182,7 @@ SignalBridgePlugin/
 │   └── ui/                  # Qt widgets
 ├── tests/                   # Unit tests
 ├── third_party/             # Dependencies (hidapi, quickjs)
-├── OpenRGB/                 # OpenRGB headers (submodule)
-└── resources/               # Qt resources
+└── OpenRGB/                 # OpenRGB headers (submodule)
 ```
 
 ### Code Conventions

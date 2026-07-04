@@ -143,7 +143,8 @@ SignalBridgePlugin (OpenRGB 接口)
 ### JavaScript 运行时
 - **SignalRgbRuntimeFactory**: 创建配置好的 QuickJS 运行时实例
 - **RuntimeBindings**: 提供 SignalRGB API（`device.log()`、`device.read()`、`device.write()`）
-- **ModuleLoader**: 将脚本加载为 ES6 模块
+- **BuiltinModules**: 解析 `src/runtime/signalrgb` 中自注册的原生 C++ 模块
+- **ModuleLoader**: 将用户脚本和原生内置模块加载为 ES6 模块
 - 脚本导出函数：`Name()`、`Initialize()`、`Render()`、`Shutdown()`
 
 ### 数据流
@@ -172,6 +173,7 @@ SignalBridgePlugin/
 ├── src/
 │   ├── domain/              # 核心类型 (ControlParameters, DeviceRecords)
 │   ├── runtime/             # QuickJS 集成、绑定
+│   │   └── signalrgb/       # 自注册的原生 @SignalRGB/* 模块
 │   ├── scanning/            # 脚本发现、元数据提取
 │   ├── discovery/           # 设备发现协调
 │   ├── openrgb/             # OpenRGB 集成（控制器、映射）
@@ -180,8 +182,7 @@ SignalBridgePlugin/
 │   └── ui/                  # Qt 小部件
 ├── tests/                   # 单元测试
 ├── third_party/             # 依赖项（hidapi、quickjs）
-├── OpenRGB/                 # OpenRGB 头文件（子模块）
-└── resources/               # Qt 资源
+└── OpenRGB/                 # OpenRGB 头文件（子模块）
 ```
 
 ### 代码规范
