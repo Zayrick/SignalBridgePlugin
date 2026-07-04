@@ -33,7 +33,9 @@ QuickJsRuntime SignalRgbRuntimeFactory::CreateDeviceRuntime(
     std::map<std::string, HidBackend::Handle> endpoint_handles,
     std::vector<EndpointDescriptor> endpoints,
     QJsonObject configuration,
-    ScriptLogCallback log_callback)
+    ScriptLogCallback log_callback,
+    std::shared_ptr<SerialBackend> serial_backend,
+    SerialInfo primary_serial)
 {
     QuickJsRuntime runtime;
     auto state = std::make_unique<RuntimeCallbackState>();
@@ -44,6 +46,17 @@ QuickJsRuntime SignalRgbRuntimeFactory::CreateDeviceRuntime(
     state->primary_hid = primary_hid;
     state->device.vid = primary_hid.vid;
     state->device.pid = primary_hid.pid;
+    state->serial_backend = std::move(serial_backend);
+    state->primary_serial = std::move(primary_serial);
+    state->active_serial = state->primary_serial;
+    if(state->primary_serial.has_vid)
+    {
+        state->device.vid = state->primary_serial.vid;
+    }
+    if(state->primary_serial.has_pid)
+    {
+        state->device.pid = state->primary_serial.pid;
+    }
     state->script_name = meta.name;
     state->log_callback = std::move(log_callback);
     runtime.SetCallbackState(std::move(state));

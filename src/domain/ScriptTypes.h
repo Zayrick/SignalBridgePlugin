@@ -28,6 +28,7 @@ struct ScriptMeta
     std::vector<std::uint16_t> pids;
     unsigned int width = 1;
     unsigned int height = 1;
+    std::string transport_type;
     std::string device_type;
     std::string publisher;
     std::string image_url;

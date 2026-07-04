@@ -13,6 +13,7 @@
 
 #include "domain/ScriptTypes.h"
 #include "hid/HidBackend.h"
+#include "serial/SerialBackend.h"
 
 struct JSContext;
 struct JSModuleDef;
@@ -74,6 +75,10 @@ struct RuntimeCallbackState
     std::vector<EndpointDescriptor> endpoints;
     HidInfo primary_hid;
     std::size_t last_read_size = 0;
+    std::shared_ptr<SerialBackend> serial_backend;
+    SerialInfo primary_serial;
+    SerialInfo active_serial;
+    std::unique_ptr<SerialConnection> serial_connection;
     std::string script_name;
     ScriptLogCallback log_callback;
     RuntimeDeviceState device;

@@ -44,9 +44,27 @@ QString DeviceIdentityForHid(const HidInfo& hid)
     return QString::fromStdString(hid.path);
 }
 
+QString DeviceIdentityForSerial(const SerialInfo& serial)
+{
+    if(!serial.serial_number.empty())
+    {
+        return QString::fromStdString(serial.serial_number);
+    }
+    if(!serial.port_name.empty())
+    {
+        return QString::fromStdString(serial.port_name);
+    }
+    return QString::fromStdString(serial.system_location);
+}
+
 QString ConfigKeyForDevice(const ScriptMeta& meta, const HidInfo& hid)
 {
     return ConfigKeyForScript(meta) + "|" + DeviceIdentityForHid(hid);
+}
+
+QString ConfigKeyForDevice(const ScriptMeta& meta, const SerialInfo& serial)
+{
+    return ConfigKeyForScript(meta) + "|" + DeviceIdentityForSerial(serial);
 }
 
 QJsonObject DeviceRecordForController(const ScriptMeta& meta, const HidInfo& hid, const QString& key)
@@ -75,6 +93,33 @@ QJsonObject DeviceRecordForController(const ScriptMeta& meta, const HidInfo& hid
     return device;
 }
 
+QJsonObject DeviceRecordForController(const ScriptMeta& meta, const SerialInfo& serial, const QString& key)
+{
+    const QString source_path = QString::fromStdString(meta.source_path);
+
+    QJsonArray parameters;
+    for(const QJsonObject& parameter : meta.control_parameters)
+    {
+        parameters.append(parameter);
+    }
+
+    QJsonObject device;
+    device.insert("key", key);
+    device.insert("script_key", ConfigKeyForScript(meta));
+    device.insert("name", QString::fromStdString(meta.name));
+    device.insert("file", QFileInfo(source_path).fileName());
+    device.insert("source_path", source_path);
+    device.insert("vid", meta.vid.has_value() ? FormatHex16(*meta.vid) : (serial.has_vid ? FormatHex16(serial.vid) : QString()));
+    device.insert("pids", meta.pids.empty() ? (serial.has_pid ? FormatHex16(serial.pid) : QString()) : FormatPidList(meta.pids));
+    device.insert("device_type", QString::fromStdString(meta.device_type));
+    device.insert("transport_type", QString::fromStdString(meta.transport_type));
+    device.insert("publisher", QString::fromStdString(meta.publisher));
+    device.insert("serial", QString::fromStdString(serial.serial_number));
+    device.insert("location", QString::fromStdString(!serial.port_name.empty() ? serial.port_name : serial.system_location));
+    device.insert("parameters", parameters);
+    return device;
+}
+
 QString CompactJsonArray(const QJsonArray& array)
 {
     return QString::fromUtf8(QJsonDocument(array).toJson(QJsonDocument::Compact));
@@ -97,7 +142,7 @@ QStringList FormatScriptTable(const std::vector<ScriptMeta>& scripts)
 
         cells << file_name
               << (meta.vid.has_value() ? FormatHex16(*meta.vid) : QString())
-              << QString::fromStdString(meta.device_type)
+              << QString::fromStdString(meta.transport_type.empty() || meta.transport_type == "hid" ? meta.device_type : meta.device_type + " (" + meta.transport_type + ")")
               << name
               << QString::fromStdString(meta.publisher);
     }

@@ -244,8 +244,11 @@ export function ProbeBuiltins() {
         serialInfoEmpty: Object.keys(serial.getDeviceInfo()).length === 0,
         serialConnectFalse: serial.connect() === false,
         serialConnectedFalse: serial.isConnected() === false,
-        serialWriteFalse: serial.write([1]) === false,
+        serialWriteZero: serial.write([1]) === 0,
         serialReadEmpty: serial.read().length === 0,
+        serialReadAllEmpty: serial.readAll().length === 0,
+        serialPortNameEmpty: serial.getPortName() === "",
+        serialBaudRateZero: serial.getBaudRate() === 0,
         serialGlobalAbsent: globalThis.serial === undefined,
     };
 }
@@ -271,8 +274,11 @@ export function ProbeBuiltins() {
            Check(info.value("serialInfoEmpty").toBool(false), "serial getDeviceInfo remains empty") &&
            Check(info.value("serialConnectFalse").toBool(false), "serial connect remains unavailable") &&
            Check(info.value("serialConnectedFalse").toBool(false), "serial isConnected remains false") &&
-           Check(info.value("serialWriteFalse").toBool(false), "serial write remains unavailable") &&
+           Check(info.value("serialWriteZero").toBool(false), "serial write remains unavailable") &&
            Check(info.value("serialReadEmpty").toBool(false), "serial read remains empty") &&
+           Check(info.value("serialReadAllEmpty").toBool(false), "serial readAll remains empty") &&
+           Check(info.value("serialPortNameEmpty").toBool(false), "serial getPortName remains empty") &&
+           Check(info.value("serialBaudRateZero").toBool(false), "serial getBaudRate remains zero") &&
            Check(info.value("serialGlobalAbsent").toBool(false), "serial import does not create a global serial object") &&
            Check(runtime.LoadedModuleSources().size() == 1, "native builtin modules are not recorded as user script sources");
 }
@@ -371,6 +377,72 @@ export function Snapshot() {
            Check(snapshot.value("endpoints").toArray().size() == 1, "native device runtime exposes HID endpoints") &&
            Check(color.size() == 3 && color.at(0).toInt() == 7 && color.at(1).toInt() == 8 && color.at(2).toInt() == 9,
                  "native device runtime reads OpenRGB frame through device.color");
+}
+
+bool TestSerialDeviceRuntime()
+{
+    using namespace signalbridge;
+
+    const std::string lookup = "serial-device-test.js";
+    const std::string source = R"JS(
+import serial from "@SignalRGB/serial";
+export function Probe() {
+    const ports = serial.availablePorts();
+    const info = serial.getDeviceInfo();
+    const first = ports.length > 0 ? ports[0] : {};
+    return {
+        portCount: ports.length,
+        firstPortName: first.portName,
+        firstVendorId: first.vendorId,
+        firstProductId: first.productId,
+        infoPortName: info.portName,
+        infoVendorId: info.vendorId,
+        infoProductId: info.productId,
+        currentPortName: serial.getPortName(),
+        baudRate: serial.getBaudRate(),
+        connected: serial.isConnected(),
+    };
+}
+)JS";
+
+    ScriptMeta meta;
+    meta.lookup_path = lookup;
+    meta.source_path = lookup;
+    meta.name = "Serial Device Test";
+    meta.module_sources = { ScriptSource{ lookup, lookup, source } };
+
+    SerialInfo serial;
+    serial.port_name = "COM_SIGNALBRIDGE_TEST";
+    serial.system_location = "\\\\.\\COM_SIGNALBRIDGE_TEST";
+    serial.serial_number = "SERIALTEST";
+    serial.vid = 0x1A86;
+    serial.pid = 0x7523;
+    serial.has_vid = true;
+    serial.has_pid = true;
+
+    QuickJsRuntime runtime = SignalRgbRuntimeFactory::CreateDeviceRuntime(
+        nullptr,
+        meta,
+        0,
+        HidInfo(),
+        {},
+        {},
+        QJsonObject(),
+        {},
+        std::make_shared<SerialBackend>(),
+        serial);
+
+    const QJsonObject info = runtime.CallModuleExportJson("Probe").toObject();
+    return Check(info.value("portCount").toInt(0) >= 1, "serial runtime exposes primary serial port") &&
+           Check(info.value("firstPortName").toString() == "COM_SIGNALBRIDGE_TEST", "primary serial port is listed first") &&
+           Check(info.value("firstVendorId").toInt() == 0x1A86, "serial availablePorts exposes vendorId") &&
+           Check(info.value("firstProductId").toInt() == 0x7523, "serial availablePorts exposes productId") &&
+           Check(info.value("infoPortName").toString() == "COM_SIGNALBRIDGE_TEST", "serial getDeviceInfo exposes current port") &&
+           Check(info.value("infoVendorId").toInt() == 0x1A86, "serial getDeviceInfo exposes vendorId") &&
+           Check(info.value("infoProductId").toInt() == 0x7523, "serial getDeviceInfo exposes productId") &&
+           Check(info.value("currentPortName").toString() == "COM_SIGNALBRIDGE_TEST", "serial getPortName uses active runtime port") &&
+           Check(info.value("baudRate").toInt(-1) == 0, "serial getBaudRate is zero before connection") &&
+           Check(!info.value("connected").toBool(true), "serial isConnected is false before connection");
 }
 
 bool TestRuntimeConfigurationCallbacks()
@@ -500,6 +572,7 @@ int main()
     ok = TestSignalRgbBuiltinModules() && ok;
     ok = TestNativeScanRuntime() && ok;
     ok = TestNativeDeviceRuntime() && ok;
+    ok = TestSerialDeviceRuntime() && ok;
     ok = TestRuntimeConfigurationCallbacks() && ok;
     ok = TestTopologyAndFrame() && ok;
     if(ok)

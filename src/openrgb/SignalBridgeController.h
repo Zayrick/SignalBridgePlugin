@@ -16,6 +16,7 @@
 #include "openrgb/EndpointSession.h"
 #include "openrgb/TopologyMapper.h"
 #include "runtime/QuickJsRuntime.h"
+#include "serial/SerialBackend.h"
 
 namespace signalbridge
 {
@@ -26,6 +27,13 @@ public:
         std::shared_ptr<HidBackend> hid_backend,
         ScriptMeta meta,
         HidInfo primary_hid,
+        QJsonObject configuration = QJsonObject(),
+        std::string config_key = {},
+        ScriptLogCallback log_callback = {});
+    SignalBridgeController(
+        std::shared_ptr<SerialBackend> serial_backend,
+        ScriptMeta meta,
+        SerialInfo primary_serial,
         QJsonObject configuration = QJsonObject(),
         std::string config_key = {},
         ScriptLogCallback log_callback = {});
@@ -55,8 +63,10 @@ private:
     void BuildZonesFromTopology(const QJsonObject& topology);
 
     std::shared_ptr<HidBackend> hid_backend_;
+    std::shared_ptr<SerialBackend> serial_backend_;
     ScriptMeta meta_;
     HidInfo primary_hid_;
+    SerialInfo primary_serial_;
     QJsonObject configuration_;
     std::string config_key_;
     ScriptLogCallback log_callback_;

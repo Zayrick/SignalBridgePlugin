@@ -8,8 +8,8 @@ set(CMAKE_AUTORCC ON)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-find_package(QT NAMES Qt6 Qt5 REQUIRED COMPONENTS Widgets LinguistTools)
-find_package(Qt${QT_VERSION_MAJOR} REQUIRED COMPONENTS Widgets LinguistTools)
+find_package(QT NAMES Qt6 Qt5 REQUIRED COMPONENTS Widgets SerialPort LinguistTools)
+find_package(Qt${QT_VERSION_MAJOR} REQUIRED COMPONENTS Widgets SerialPort LinguistTools)
 
 set(BUILD_SHARED_LIBS OFF CACHE BOOL "Build third-party libraries as static libraries" FORCE)
 set(HIDAPI_BUILD_HIDTEST OFF CACHE BOOL "Build hidapi hidtest utility" FORCE)
@@ -44,6 +44,7 @@ add_library(SignalBridgePlugin SHARED)
 
 target_sources(SignalBridgePlugin PRIVATE
   OpenRGB/RGBController/RGBController.cpp
+  OpenRGB/serial_port/serial_port.h
   include/SignalBridge/SignalBridgePlugin.h
   include/SignalBridge/SignalBridgePlugin_global.h
   src/SignalBridgePlugin.cpp
@@ -87,6 +88,10 @@ target_sources(SignalBridgePlugin PRIVATE
   src/runtime/RuntimeBindings.h
   src/runtime/SignalRgbRuntimeFactory.cpp
   src/runtime/SignalRgbRuntimeFactory.h
+  src/serial/OpenRgbSerialPort.cpp
+  src/serial/SerialBackend.cpp
+  src/serial/SerialBackend.h
+  src/serial/SerialTypes.h
   ${SIGNALBRIDGE_SIGNALRGB_SOURCES}
   src/scanning/ScriptMetadataExtractor.cpp
   src/scanning/ScriptMetadataExtractor.h
@@ -103,7 +108,7 @@ target_sources(SignalBridgePlugin PRIVATE
   ${TS_FILES}
 )
 
-target_link_libraries(SignalBridgePlugin PRIVATE Qt${QT_VERSION_MAJOR}::Widgets hidapi::hidapi qjs)
+target_link_libraries(SignalBridgePlugin PRIVATE Qt${QT_VERSION_MAJOR}::Widgets Qt${QT_VERSION_MAJOR}::SerialPort hidapi::hidapi qjs)
 
 target_include_directories(SignalBridgePlugin PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/include
@@ -136,6 +141,7 @@ if(SIGNALBRIDGE_BUILD_TESTS)
     add_executable(SignalBridgeCoreTests)
     target_sources(SignalBridgeCoreTests PRIVATE
         OpenRGB/RGBController/RGBController.cpp
+        OpenRGB/serial_port/serial_port.h
         tests/SignalBridgeCoreTests.cpp
         src/config/DeviceConfigStore.cpp
         src/config/DeviceConfigStore.h
@@ -167,9 +173,13 @@ if(SIGNALBRIDGE_BUILD_TESTS)
         src/runtime/RuntimeBindings.h
         src/runtime/SignalRgbRuntimeFactory.cpp
         src/runtime/SignalRgbRuntimeFactory.h
+        src/serial/OpenRgbSerialPort.cpp
+        src/serial/SerialBackend.cpp
+        src/serial/SerialBackend.h
+        src/serial/SerialTypes.h
         ${SIGNALBRIDGE_SIGNALRGB_SOURCES}
     )
-    target_link_libraries(SignalBridgeCoreTests PRIVATE Qt${QT_VERSION_MAJOR}::Widgets hidapi::hidapi qjs)
+    target_link_libraries(SignalBridgeCoreTests PRIVATE Qt${QT_VERSION_MAJOR}::Widgets Qt${QT_VERSION_MAJOR}::SerialPort hidapi::hidapi qjs)
     if(MSVC)
         target_compile_options(SignalBridgeCoreTests PRIVATE /FS)
     endif()

@@ -12,6 +12,7 @@
 
 #include "domain/ScriptTypes.h"
 #include "hid/HidTypes.h"
+#include "serial/SerialTypes.h"
 
 namespace signalbridge
 {
@@ -21,8 +22,11 @@ QString FormatHex16(std::uint16_t value);
 QString FormatPidList(const std::vector<std::uint16_t>& pids);
 QString ConfigKeyForScript(const ScriptMeta& meta);
 QString DeviceIdentityForHid(const HidInfo& hid);
+QString DeviceIdentityForSerial(const SerialInfo& serial);
 QString ConfigKeyForDevice(const ScriptMeta& meta, const HidInfo& hid);
+QString ConfigKeyForDevice(const ScriptMeta& meta, const SerialInfo& serial);
 QJsonObject DeviceRecordForController(const ScriptMeta& meta, const HidInfo& hid, const QString& key);
+QJsonObject DeviceRecordForController(const ScriptMeta& meta, const SerialInfo& serial, const QString& key);
 QString CompactJsonArray(const QJsonArray& array);
 QStringList FormatScriptTable(const std::vector<ScriptMeta>& scripts);
 }

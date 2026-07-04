@@ -72,6 +72,47 @@ SignalBridgeController::SignalBridgeController(
     SetupColors();
 }
 
+SignalBridgeController::SignalBridgeController(
+    std::shared_ptr<SerialBackend> serial_backend,
+    ScriptMeta meta,
+    SerialInfo primary_serial,
+    QJsonObject configuration,
+    std::string config_key,
+    ScriptLogCallback log_callback)
+    : serial_backend_(std::move(serial_backend))
+    , meta_(std::move(meta))
+    , primary_serial_(std::move(primary_serial))
+    , configuration_(std::move(configuration))
+    , config_key_(std::move(config_key))
+    , log_callback_(std::move(log_callback))
+{
+    if(config_key_.empty())
+    {
+        config_key_ = meta_.lookup_path.empty() ? meta_.source_path : meta_.lookup_path;
+    }
+
+    name = meta_.name;
+    vendor = meta_.publisher.empty() ? FirstWord(meta_.name) : meta_.publisher;
+    description = "SignalRGB serial script device";
+    version = "SignalRGB Bridge";
+    serial = primary_serial_.serial_number;
+    location = !primary_serial_.port_name.empty() ? "Serial: " + primary_serial_.port_name : primary_serial_.system_location;
+    type = ResolveOpenRgbDeviceType(meta_.device_type);
+    flags = CONTROLLER_FLAG_LOCAL;
+
+    mode direct;
+    direct.name = "Direct";
+    direct.value = 0;
+    direct.flags = MODE_FLAG_HAS_PER_LED_COLOR;
+    direct.color_mode = MODE_COLORS_PER_LED;
+    modes.push_back(direct);
+    active_mode = 0;
+
+    CreateRuntime();
+    InitializeScript();
+    SetupColors();
+}
+
 SignalBridgeController::~SignalBridgeController()
 {
     std::lock_guard<std::mutex> lock(mutex_);
@@ -301,15 +342,22 @@ void SignalBridgeController::LogConfigurationError(const QString& property, cons
 
 void SignalBridgeController::CreateRuntime()
 {
+    const std::map<std::string, HidBackend::Handle> endpoint_handles =
+        endpoint_session_ != nullptr ? endpoint_session_->Handles() : std::map<std::string, HidBackend::Handle>();
+    const std::vector<EndpointDescriptor> endpoints =
+        endpoint_session_ != nullptr ? endpoint_session_->Endpoints() : std::vector<EndpointDescriptor>();
+
     runtime_ = std::make_unique<QuickJsRuntime>(SignalRgbRuntimeFactory::CreateDeviceRuntime(
         hid_backend_,
         meta_,
-        endpoint_session_->PrimaryHandle(),
+        endpoint_session_ != nullptr ? endpoint_session_->PrimaryHandle() : 0,
         primary_hid_,
-        endpoint_session_->Handles(),
-        endpoint_session_->Endpoints(),
+        endpoint_handles,
+        endpoints,
         configuration_,
-        log_callback_));
+        log_callback_,
+        serial_backend_,
+        primary_serial_));
 }
 
 void SignalBridgeController::InitializeScript()

@@ -15,6 +15,7 @@
 #include "openrgb/SignalBridgeController.h"
 #include "runtime/SignalRgbRuntimeFactory.h"
 #include "scanning/ScriptScanner.h"
+#include "serial/SerialBackend.h"
 
 namespace signalbridge
 {
@@ -97,6 +98,17 @@ bool ValidateScriptEndpoint(
         return false;
     }
 }
+
+bool IsSerialScript(const ScriptMeta& meta)
+{
+    return meta.transport_type == "serial";
+}
+
+bool IsHidScript(const ScriptMeta& meta)
+{
+    return meta.transport_type.empty() || meta.transport_type == "hid" || meta.transport_type == "hybrid";
+}
+
 }
 
 void DiscoveryService::Discover(
@@ -121,6 +133,7 @@ void DiscoveryService::Discover(
         }
 
         auto hid_backend = std::make_shared<HidBackend>();
+        auto serial_backend = std::make_shared<SerialBackend>();
 
         const filesystem::path script_path = manager->GetConfigurationDirectory() / "SignalBridge" / "scripts";
         filesystem::create_directories(script_path);
@@ -171,26 +184,37 @@ void DiscoveryService::Discover(
 
         discovered_scripts = FormatScriptTable(report.scripts);
 
-        EmitStatus(generation, callbacks, "Enumerating HID interfaces...", "", discovered_scripts, QString(), true, 72);
+        EmitStatus(generation, callbacks, "Enumerating HID and serial interfaces...", "", discovered_scripts, QString(), true, 72);
         const std::vector<HidInfo> hid_devices = hid_backend->Enumerate();
+        const std::vector<SerialInfo> serial_devices = serial_backend->Enumerate();
         if(IsStale(generation, callbacks))
         {
             return;
         }
-        EmitStatus(generation, callbacks, "Matching scripts to HID devices...", "", discovered_scripts, QString(), true, 80);
+        EmitStatus(generation, callbacks, "Matching scripts to devices...", "", discovered_scripts, QString(), true, 80);
 
         std::map<std::pair<std::uint16_t, std::uint16_t>, std::vector<HidInfo>> by_vid_pid;
         for(const HidInfo& hid : hid_devices)
         {
             by_vid_pid[{ hid.vid, hid.pid }].push_back(hid);
         }
+        std::map<std::pair<std::uint16_t, std::uint16_t>, std::vector<SerialInfo>> serial_by_vid_pid;
+        for(const SerialInfo& serial : serial_devices)
+        {
+            if(serial.has_vid && serial.has_pid)
+            {
+                serial_by_vid_pid[{ serial.vid, serial.pid }].push_back(serial);
+            }
+        }
 
         std::set<std::string> open_groups;
+        std::set<QString> open_serial_ports;
         QJsonArray registered_devices;
         detail_lines << QString("Script directory: %1").arg(QString::fromStdString(script_dir));
         detail_lines << QString("Scanned scripts: %1").arg(report.scripts.size());
         detail_lines << QString("Scan errors: %1").arg(report.errors.size());
         detail_lines << QString("HID interfaces: %1").arg(hid_devices.size());
+        detail_lines << QString("Serial ports: %1").arg(serial_devices.size());
         detail_lines << "";
 
         int last_register_progress = 80;
@@ -234,58 +258,114 @@ void DiscoveryService::Discover(
 
             for(std::uint16_t pid : meta.pids)
             {
-                const auto candidates_it = by_vid_pid.find({ *meta.vid, pid });
-                if(candidates_it == by_vid_pid.end())
+                if(IsHidScript(meta))
                 {
-                    continue;
+                    const auto candidates_it = by_vid_pid.find({ *meta.vid, pid });
+                    if(candidates_it != by_vid_pid.end())
+                    {
+                        for(const HidInfo& hid : candidates_it->second)
+                        {
+                            if(IsStale(generation, callbacks))
+                            {
+                                return;
+                            }
+
+                            const std::string group = HidBackend::NormalizeDevicePath(hid.path);
+                            if(!group.empty() && open_groups.find(group) != open_groups.end())
+                            {
+                                continue;
+                            }
+                            if(!ValidateScriptEndpoint(meta, hid, generation, callbacks))
+                            {
+                                continue;
+                            }
+
+                            try
+                            {
+                                const QString config_key = ConfigKeyForDevice(meta, hid);
+                                auto controller = std::make_unique<SignalBridgeController>(
+                                    hid_backend,
+                                    meta,
+                                    hid,
+                                    config_store.ConfigurationForDevice(config_key, meta),
+                                    config_key.toStdString(),
+                                    runtime_log_callback);
+                                SignalBridgeController* raw_controller = registry.Register(manager, std::move(controller));
+                                if(raw_controller == nullptr)
+                                {
+                                    throw std::runtime_error("failed to register controller");
+                                }
+                                open_groups.insert(group);
+                                registered_devices.append(DeviceRecordForController(raw_controller->ScriptMetadata(), hid, config_key));
+                                matched++;
+                                detail_lines << QString("Registered: %1 [%2:%3] HID")
+                                                    .arg(QString::fromStdString(meta.name))
+                                                    .arg(hid.vid, 4, 16, QLatin1Char('0'))
+                                                    .arg(hid.pid, 4, 16, QLatin1Char('0'));
+                            }
+                            catch(const std::exception& err)
+                            {
+                                failed++;
+                                detail_lines << QString("Failed: %1 - %2")
+                                                    .arg(QString::fromStdString(meta.name))
+                                                    .arg(err.what());
+                            }
+                        }
+                    }
                 }
 
-                for(const HidInfo& hid : candidates_it->second)
+                if(IsSerialScript(meta))
                 {
-                    if(IsStale(generation, callbacks))
-                    {
-                        return;
-                    }
-
-                    const std::string group = HidBackend::NormalizeDevicePath(hid.path);
-                    if(!group.empty() && open_groups.find(group) != open_groups.end())
-                    {
-                        continue;
-                    }
-                    if(!ValidateScriptEndpoint(meta, hid, generation, callbacks))
+                    const auto candidates_it = serial_by_vid_pid.find({ *meta.vid, pid });
+                    if(candidates_it == serial_by_vid_pid.end())
                     {
                         continue;
                     }
 
-                    try
+                    for(const SerialInfo& serial : candidates_it->second)
                     {
-                        const QString config_key = ConfigKeyForDevice(meta, hid);
-                        auto controller = std::make_unique<SignalBridgeController>(
-                            hid_backend,
-                            meta,
-                            hid,
-                            config_store.ConfigurationForDevice(config_key, meta),
-                            config_key.toStdString(),
-                            runtime_log_callback);
-                        SignalBridgeController* raw_controller = registry.Register(manager, std::move(controller));
-                        if(raw_controller == nullptr)
+                        if(IsStale(generation, callbacks))
                         {
-                            throw std::runtime_error("failed to register controller");
+                            return;
                         }
-                        open_groups.insert(group);
-                        registered_devices.append(DeviceRecordForController(raw_controller->ScriptMetadata(), hid, config_key));
-                        matched++;
-                        detail_lines << QString("Registered: %1 [%2:%3]")
-                                            .arg(QString::fromStdString(meta.name))
-                                            .arg(hid.vid, 4, 16, QLatin1Char('0'))
-                                            .arg(hid.pid, 4, 16, QLatin1Char('0'));
-                    }
-                    catch(const std::exception& err)
-                    {
-                        failed++;
-                        detail_lines << QString("Failed: %1 - %2")
-                                            .arg(QString::fromStdString(meta.name))
-                                            .arg(err.what());
+
+                        const QString port = QString::fromStdString(serial.port_name);
+                        if(port.isEmpty() || open_serial_ports.find(port) != open_serial_ports.end())
+                        {
+                            continue;
+                        }
+
+                        try
+                        {
+                            const QString config_key = ConfigKeyForDevice(meta, serial);
+                            auto controller = std::make_unique<SignalBridgeController>(
+                                serial_backend,
+                                meta,
+                                serial,
+                                config_store.ConfigurationForDevice(config_key, meta),
+                                config_key.toStdString(),
+                                runtime_log_callback);
+                            SignalBridgeController* raw_controller = registry.Register(manager, std::move(controller));
+                            if(raw_controller == nullptr)
+                            {
+                                throw std::runtime_error("failed to register controller");
+                            }
+                            open_serial_ports.insert(port);
+                            registered_devices.append(DeviceRecordForController(raw_controller->ScriptMetadata(), serial, config_key));
+                            matched++;
+                            detail_lines << QString("Registered: %1 [%2:%3] Serial %4")
+                                                .arg(QString::fromStdString(meta.name))
+                                                .arg(serial.vid, 4, 16, QLatin1Char('0'))
+                                                .arg(serial.pid, 4, 16, QLatin1Char('0'))
+                                                .arg(port);
+                        }
+                        catch(const std::exception& err)
+                        {
+                            failed++;
+                            detail_lines << QString("Failed: %1 - %2")
+                                                .arg(QString::fromStdString(meta.name))
+                                                .arg(err.what());
+                        }
                     }
                 }
             }
@@ -308,7 +388,7 @@ void DiscoveryService::Discover(
             }
         }
 
-        std::string status = "Registered " + std::to_string(matched) + " SignalRGB HID script device(s)";
+        std::string status = "Registered " + std::to_string(matched) + " SignalRGB script device(s)";
         if(failed > 0)
         {
             status += ", " + std::to_string(failed) + " failed";

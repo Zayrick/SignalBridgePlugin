@@ -11,6 +11,7 @@
 #include "domain/ScriptTypes.h"
 #include "hid/HidBackend.h"
 #include "runtime/QuickJsRuntime.h"
+#include "serial/SerialBackend.h"
 
 namespace signalbridge
 {
@@ -27,7 +28,9 @@ public:
         std::map<std::string, HidBackend::Handle> endpoint_handles,
         std::vector<EndpointDescriptor> endpoints,
         QJsonObject configuration = QJsonObject(),
-        ScriptLogCallback log_callback = {});
+        ScriptLogCallback log_callback = {},
+        std::shared_ptr<SerialBackend> serial_backend = {},
+        SerialInfo primary_serial = {});
 };
 }
 

@@ -144,6 +144,11 @@ std::optional<ScriptMeta> ScriptMetadataExtractor::Extract(
     const QJsonArray size = runtime.CallModuleExportJson("Size").toArray();
     meta.width = size.size() > 0 ? std::max(1u, JsonUInt(size.at(0), 1)) : 1;
     meta.height = size.size() > 1 ? std::max(1u, JsonUInt(size.at(1), 1)) : 1;
+    meta.transport_type = runtime.CallModuleExportJson("Type").toString("hid").trimmed().toLower().toStdString();
+    if(meta.transport_type.empty())
+    {
+        meta.transport_type = "hid";
+    }
     meta.device_type = runtime.CallModuleExportJson("DeviceType").toString().toStdString();
     meta.publisher = runtime.CallModuleExportJson("Publisher").toString().toStdString();
     meta.image_url = runtime.CallModuleExportJson("ImageUrl").toString().toStdString();
