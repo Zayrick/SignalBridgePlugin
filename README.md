@@ -1,18 +1,26 @@
 # SignalBridge Plugin
 
-An OpenRGB plugin that brings support for SignalRGB JavaScript device plugins to OpenRGB, enabling control of RGB devices through SignalRGB's extensive script library.
+An OpenRGB plugin that runs user-supplied SignalRGB-compatible JavaScript device plugins in OpenRGB.
 
 [![Version](https://img.shields.io/badge/version-0.1.0-blue.svg)](https://github.com/yourusername/SignalBridgePlugin)
 [![License](https://img.shields.io/badge/license-GPL--2.0--or--later-green.svg)](LICENSE)
 
 [中文文档](README.zh-CN.md) | [English](README.md)
 
+## Compatibility Notice
+
+SignalBridge is an independent compatibility project. It was developed from publicly available SignalRGB developer documentation and open-source device plugin material, not by reverse engineering, decompiling, modifying, or extracting source code from the SignalRGB application.
+
+This repository does not include or redistribute SignalRGB application binaries, proprietary source code, paid content, effect libraries, artwork, or device scripts. Users are responsible for providing scripts they are legally permitted to use and for complying with the applicable script licenses and terms.
+
+SignalRGB and OpenRGB names are used only to describe compatibility with their respective ecosystems. This project is not affiliated with, endorsed by, sponsored by, or officially supported by SignalRGB, Whirlwind Virtual Realities Inc., OpenRGB, or their contributors.
+
 ## Features
 
-- **SignalRGB Script Compatibility**: Execute SignalRGB JavaScript device plugins within OpenRGB
+- **SignalRGB-Compatible Script Runtime**: Execute user-supplied JavaScript device plugins within OpenRGB
 - **Embedded JavaScript Runtime**: Uses QuickJS for fast, lightweight script execution
-- **Automatic Device Discovery**: Scans and matches SignalRGB scripts to connected USB HID devices
-- **Seamless Integration**: Translates between SignalRGB and OpenRGB device models
+- **Automatic Device Discovery**: Scans and matches compatible scripts to connected USB HID devices
+- **Model Translation**: Translates between compatible script device definitions and OpenRGB devices
 - **Configuration Management**: Persists device-specific settings across sessions
 - **Real-time Control**: Direct USB HID communication for low-latency RGB updates
 - **Multi-threaded Architecture**: Background discovery without blocking OpenRGB UI
@@ -22,7 +30,7 @@ An OpenRGB plugin that brings support for SignalRGB JavaScript device plugins to
 ### Runtime Requirements
 - **OpenRGB**: 0.7 or later (with plugin support)
 - **Operating System**: Windows 10/11 (tested); Linux/macOS have not been tested
-- **SignalRGB Scripts**: Place `.js` scripts in OpenRGB's configuration directory under `SignalBridge/scripts/` (default Windows path: `%APPDATA%/OpenRGB/SignalBridge/scripts/`)
+- **Device Scripts**: Place compatible `.js` scripts that you are permitted to use in OpenRGB's configuration directory under `SignalBridge/scripts/` (default Windows path: `%APPDATA%/OpenRGB/SignalBridge/scripts/`)
 
 ### Build Requirements
 - **CMake**: 3.16 or later
@@ -94,7 +102,7 @@ ctest --test-dir build/qt6-debug --output-on-failure
 ## Usage
 
 ### Initial Setup
-1. **Place SignalRGB scripts** in OpenRGB's configuration directory under `SignalBridge/scripts/` (default Windows path: `%APPDATA%/OpenRGB/SignalBridge/scripts/`)
+1. **Place compatible device scripts** that you are permitted to use in OpenRGB's configuration directory under `SignalBridge/scripts/` (default Windows path: `%APPDATA%/OpenRGB/SignalBridge/scripts/`)
 2. **Launch OpenRGB** and navigate to the **SignalBridge** tab
 3. **Click "Scan Devices"** to discover compatible devices
 
@@ -104,6 +112,11 @@ The plugin will:
 - Extract device metadata (vendor ID, product ID, model name)
 - Match scripts against connected USB HID devices
 - Create OpenRGB controllers for matched devices
+
+### Script Use
+- SignalBridge does not download, bundle, or grant rights to third-party device scripts.
+- Use only scripts you own, authored yourself, or are otherwise licensed or permitted to use.
+- Do not redistribute third-party scripts with this project unless their license or owner allows it.
 
 ### Device Configuration
 - Compatible devices appear in OpenRGB's main device list
@@ -212,7 +225,7 @@ Tests cover:
 ## Known Issues
 
 - **Windows Sandbox**: May fail with error 1312. Use managed escalation if encountered.
-- **Script Compatibility**: Not all SignalRGB scripts may work due to API differences
+- **Script Compatibility**: Not all third-party device scripts may work due to API differences
 - **Platform Support**: Tested on Windows only; Linux/macOS have not been tested
 
 ## Contributing
@@ -233,12 +246,14 @@ Contributions are welcome! Please:
 
 ## License
 
-This project is licensed under the GNU General Public License v2.0. See [LICENSE](LICENSE) for details.
+SignalBridgePlugin source code is licensed under the GNU General Public License v2.0 or later. See [LICENSE](LICENSE) for details.
+
+Third-party components, OpenRGB headers/source files, QuickJS, hidapi, and user-supplied device scripts remain under their own licenses or terms. This project license does not grant rights to redistribute SignalRGB software, SignalRGB paid content, or third-party scripts.
 
 ## Acknowledgments
 
 - **OpenRGB**: For the excellent RGB control platform and plugin API
-- **SignalRGB**: For the comprehensive device script library
+- **SignalRGB**: For the public developer documentation and open-source device plugin ecosystem
 - **QuickJS**: For the lightweight JavaScript engine
 - **hidapi**: For cross-platform HID device access
 
@@ -257,4 +272,4 @@ For issues, questions, or suggestions:
 
 ---
 
-**Note**: This plugin is an independent project and is not officially affiliated with OpenRGB or SignalRGB.
+**Note**: SignalBridgePlugin is an independent, unofficial compatibility project. SignalRGB and OpenRGB are trademarks or project names of their respective owners.

@@ -1,18 +1,26 @@
 # SignalBridge 插件
 
-一个 OpenRGB 插件，为 OpenRGB 带来 SignalRGB JavaScript 设备插件的支持，使得可以通过 SignalRGB 的丰富脚本库控制 RGB 设备。
+一个 OpenRGB 插件，用于在 OpenRGB 中运行用户自行提供的 SignalRGB 兼容 JavaScript 设备插件。
 
 [![版本](https://img.shields.io/badge/版本-0.1.0-blue.svg)](https://github.com/Zayrick/SignalBridgePlugin)
 [![许可证](https://img.shields.io/badge/许可证-GPL--2.0--or--later-green.svg)](LICENSE)
 
 [中文文档](README.zh-CN.md) | [English](README.md)
 
+## 兼容性声明
+
+SignalBridge 是一个独立的兼容性项目。项目基于公开可用的 SignalRGB 开发者文档和开源设备插件资料编写，不是通过逆向、反编译、修改或提取 SignalRGB 应用程序源码实现的。
+
+本仓库不包含也不再分发 SignalRGB 应用程序二进制文件、专有源码、付费内容、效果库、图形素材或设备脚本。用户需要自行提供其有权使用的脚本，并遵守适用的脚本许可证和条款。
+
+SignalRGB 和 OpenRGB 名称仅用于描述与对应生态的兼容性。本项目不隶属于 SignalRGB、Whirlwind Virtual Realities Inc.、OpenRGB 或其贡献者，也未获得其认可、赞助或官方支持。
+
 ## 功能特性
 
-- **SignalRGB 脚本兼容性**: 在 OpenRGB 中执行 SignalRGB JavaScript 设备插件
+- **SignalRGB 兼容脚本运行时**: 在 OpenRGB 中执行用户自行提供的 JavaScript 设备插件
 - **内嵌 JavaScript 运行时**: 使用 QuickJS 实现快速、轻量级的脚本执行
-- **自动设备发现**: 扫描并匹配 SignalRGB 脚本与已连接的 USB HID 设备
-- **无缝集成**: 在 SignalRGB 和 OpenRGB 设备模型之间进行转换
+- **自动设备发现**: 扫描兼容脚本并匹配已连接的 USB HID 设备
+- **模型转换**: 在兼容脚本的设备定义和 OpenRGB 设备之间进行转换
 - **配置管理**: 跨会话持久化设备特定的设置
 - **实时控制**: 直接 USB HID 通信，实现低延迟的 RGB 更新
 - **多线程架构**: 后台设备发现，不阻塞 OpenRGB 用户界面
@@ -22,7 +30,7 @@
 ### 运行要求
 - **OpenRGB**: 0.7 或更高版本（支持插件）
 - **操作系统**: Windows 10/11（已测试）；Linux/macOS 尚未测试
-- **SignalRGB 脚本**: 将 `.js` 脚本放入 OpenRGB 配置目录下的 `SignalBridge/scripts/`（Windows 默认路径：`%APPDATA%/OpenRGB/SignalBridge/scripts/`）
+- **设备脚本**: 将你有权使用的兼容 `.js` 脚本放入 OpenRGB 配置目录下的 `SignalBridge/scripts/`（Windows 默认路径：`%APPDATA%/OpenRGB/SignalBridge/scripts/`）
 
 ### 构建要求
 - **CMake**: 3.16 或更高版本
@@ -94,7 +102,7 @@ ctest --test-dir build/qt6-debug --output-on-failure
 ## 使用方法
 
 ### 初始设置
-1. **放置 SignalRGB 脚本**：将 `.js` 脚本放入 OpenRGB 配置目录下的 `SignalBridge/scripts/`（Windows 默认路径：`%APPDATA%/OpenRGB/SignalBridge/scripts/`）
+1. **放置兼容设备脚本**：将你有权使用的 `.js` 脚本放入 OpenRGB 配置目录下的 `SignalBridge/scripts/`（Windows 默认路径：`%APPDATA%/OpenRGB/SignalBridge/scripts/`）
 2. **启动 OpenRGB** 并导航到 **SignalBridge** 选项卡
 3. **点击"扫描设备"** 以发现兼容的设备
 
@@ -104,6 +112,11 @@ ctest --test-dir build/qt6-debug --output-on-failure
 - 提取设备元数据（供应商 ID、产品 ID、型号名称）
 - 将脚本与已连接的 USB HID 设备进行匹配
 - 为匹配的设备创建 OpenRGB 控制器
+
+### 脚本使用
+- SignalBridge 不下载、不捆绑，也不授予第三方设备脚本的使用权。
+- 仅使用你自己编写、拥有，或已获得许可证/许可使用的脚本。
+- 不要随本项目再分发第三方脚本，除非其许可证或权利人允许。
 
 ### 设备配置
 - 兼容的设备会出现在 OpenRGB 的主设备列表中
@@ -212,7 +225,7 @@ ctest --test-dir build/qt6-debug --output-on-failure
 ## 已知问题
 
 - **Windows 沙箱**: 可能会失败并显示错误 1312。如果遇到，请使用托管提升。
-- **脚本兼容性**: 由于 API 差异，并非所有 SignalRGB 脚本都可能正常工作
+- **脚本兼容性**: 由于 API 差异，并非所有第三方设备脚本都可能正常工作
 - **平台支持**: 目前仅在 Windows 上测试；Linux/macOS 尚未测试
 
 ## 贡献
@@ -233,12 +246,14 @@ ctest --test-dir build/qt6-debug --output-on-failure
 
 ## 许可证
 
-本项目采用 GNU 通用公共许可证 v2.0 许可。详见 [LICENSE](LICENSE)。
+SignalBridgePlugin 源码采用 GNU 通用公共许可证 v2.0 或更高版本许可。详见 [LICENSE](LICENSE)。
+
+第三方组件、OpenRGB 头文件/源码文件、QuickJS、hidapi 以及用户自行提供的设备脚本仍适用其各自的许可证或条款。本项目许可证不授予再分发 SignalRGB 软件、SignalRGB 付费内容或第三方脚本的权利。
 
 ## 致谢
 
 - **OpenRGB**: 出色的 RGB 控制平台和插件 API
-- **SignalRGB**: 全面的设备脚本库
+- **SignalRGB**: 公开的开发者文档和开源设备插件生态
 - **QuickJS**: 轻量级的 JavaScript 引擎
 - **hidapi**: 跨平台 HID 设备访问
 
@@ -257,4 +272,4 @@ ctest --test-dir build/qt6-debug --output-on-failure
 
 ---
 
-**注意**: 本插件是一个独立项目，与 OpenRGB 或 SignalRGB 没有官方关联。
+**注意**: SignalBridgePlugin 是一个独立的非官方兼容性项目。SignalRGB 和 OpenRGB 是其各自所有者的商标或项目名称。
