@@ -21,8 +21,8 @@ An OpenRGB plugin that brings support for SignalRGB JavaScript device plugins to
 
 ### Runtime Requirements
 - **OpenRGB**: 0.7 or later (with plugin support)
-- **Operating System**: Windows 10/11 (currently tested platform)
-- **SignalRGB Scripts**: Install SignalRGB to populate `%PROGRAMDATA%/SignalRgb/Plugins/`
+- **Operating System**: Windows 10/11 (tested); Linux/macOS have not been tested
+- **SignalRGB Scripts**: Place `.js` scripts in OpenRGB's configuration directory under `SignalBridge/scripts/` (default Windows path: `%APPDATA%/OpenRGB/SignalBridge/scripts/`)
 
 ### Build Requirements
 - **CMake**: 3.16 or later
@@ -94,13 +94,13 @@ ctest --test-dir build/qt6-debug --output-on-failure
 ## Usage
 
 ### Initial Setup
-1. **Install SignalRGB** (or manually place SignalRGB scripts in `%PROGRAMDATA%/SignalRgb/Plugins/`)
+1. **Place SignalRGB scripts** in OpenRGB's configuration directory under `SignalBridge/scripts/` (default Windows path: `%APPDATA%/OpenRGB/SignalBridge/scripts/`)
 2. **Launch OpenRGB** and navigate to the **SignalBridge** tab
 3. **Click "Scan Devices"** to discover compatible devices
 
 ### Device Discovery
 The plugin will:
-- Scan all `.js` files in the SignalRGB plugins directory
+- Scan all `.js` files in OpenRGB's `SignalBridge/scripts/` configuration directory
 - Extract device metadata (vendor ID, product ID, model name)
 - Match scripts against connected USB HID devices
 - Create OpenRGB controllers for matched devices
@@ -135,7 +135,7 @@ SignalBridgePlugin (OpenRGB Interface)
 ```
 
 ### Discovery Pipeline
-1. **ScriptScanner**: Finds `.js` files in SignalRGB plugin directories
+1. **ScriptScanner**: Finds `.js` files in OpenRGB's `SignalBridge/scripts/` configuration directory
 2. **ScriptMetadataExtractor**: Creates minimal QuickJS runtimes to extract metadata
 3. **DiscoveryService**: Orchestrates scanning, matches scripts to HID devices
 4. **ControllerRegistry**: Creates controllers, registers with OpenRGB
@@ -213,7 +213,7 @@ Tests cover:
 
 - **Windows Sandbox**: May fail with error 1312. Use managed escalation if encountered.
 - **Script Compatibility**: Not all SignalRGB scripts may work due to API differences
-- **Platform Support**: Currently tested on Windows only; Linux/macOS support is planned
+- **Platform Support**: Tested on Windows only; Linux/macOS have not been tested
 
 ## Contributing
 

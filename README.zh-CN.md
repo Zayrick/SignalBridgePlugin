@@ -21,8 +21,8 @@
 
 ### 运行要求
 - **OpenRGB**: 0.7 或更高版本（支持插件）
-- **操作系统**: Windows 10/11（当前测试平台）
-- **SignalRGB 脚本**: 安装 SignalRGB 以填充 `%PROGRAMDATA%/SignalRgb/Plugins/` 目录
+- **操作系统**: Windows 10/11（已测试）；Linux/macOS 尚未测试
+- **SignalRGB 脚本**: 将 `.js` 脚本放入 OpenRGB 配置目录下的 `SignalBridge/scripts/`（Windows 默认路径：`%APPDATA%/OpenRGB/SignalBridge/scripts/`）
 
 ### 构建要求
 - **CMake**: 3.16 或更高版本
@@ -94,13 +94,13 @@ ctest --test-dir build/qt6-debug --output-on-failure
 ## 使用方法
 
 ### 初始设置
-1. **安装 SignalRGB**（或手动将 SignalRGB 脚本放置在 `%PROGRAMDATA%/SignalRgb/Plugins/` 目录）
+1. **放置 SignalRGB 脚本**：将 `.js` 脚本放入 OpenRGB 配置目录下的 `SignalBridge/scripts/`（Windows 默认路径：`%APPDATA%/OpenRGB/SignalBridge/scripts/`）
 2. **启动 OpenRGB** 并导航到 **SignalBridge** 选项卡
 3. **点击"扫描设备"** 以发现兼容的设备
 
 ### 设备发现
 插件将：
-- 扫描 SignalRGB 插件目录中的所有 `.js` 文件
+- 扫描 OpenRGB 配置目录下 `SignalBridge/scripts/` 中的所有 `.js` 文件
 - 提取设备元数据（供应商 ID、产品 ID、型号名称）
 - 将脚本与已连接的 USB HID 设备进行匹配
 - 为匹配的设备创建 OpenRGB 控制器
@@ -135,7 +135,7 @@ SignalBridgePlugin (OpenRGB 接口)
 ```
 
 ### 发现管道
-1. **ScriptScanner**: 在 SignalRGB 插件目录中查找 `.js` 文件
+1. **ScriptScanner**: 在 OpenRGB 配置目录下的 `SignalBridge/scripts/` 中查找 `.js` 文件
 2. **ScriptMetadataExtractor**: 创建最小化的 QuickJS 运行时以提取元数据
 3. **DiscoveryService**: 协调扫描，将脚本与 HID 设备进行匹配
 4. **ControllerRegistry**: 创建控制器，向 OpenRGB 注册
@@ -213,7 +213,7 @@ ctest --test-dir build/qt6-debug --output-on-failure
 
 - **Windows 沙箱**: 可能会失败并显示错误 1312。如果遇到，请使用托管提升。
 - **脚本兼容性**: 由于 API 差异，并非所有 SignalRGB 脚本都可能正常工作
-- **平台支持**: 目前仅在 Windows 上测试；计划支持 Linux/macOS
+- **平台支持**: 目前仅在 Windows 上测试；Linux/macOS 尚未测试
 
 ## 贡献
 
