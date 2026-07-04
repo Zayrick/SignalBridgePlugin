@@ -19,26 +19,6 @@ namespace signalbridge
 {
 namespace
 {
-constexpr const char* kApplyStaticMetadataJs = R"JS(
-(function() {
-    if (typeof device === 'undefined') return;
-
-    var size = (typeof __srgb_static_size !== 'undefined') ? __srgb_static_size : null;
-    if (Array.isArray(size) && size.length >= 2) {
-        device.setSize(size);
-    }
-
-    var names = (typeof __srgb_static_led_names !== 'undefined') ? __srgb_static_led_names : null;
-    var positions = (typeof __srgb_static_led_positions !== 'undefined') ? __srgb_static_led_positions : null;
-    if ((Array.isArray(names) && names.length > 0) || (Array.isArray(positions) && positions.length > 0)) {
-        device.setControllableLeds(
-            Array.isArray(names) ? names : [],
-            Array.isArray(positions) ? positions : []
-        );
-    }
-})();
-)JS";
-
 std::string ConfigurationCallbackName(const QString& property)
 {
     const QByteArray property_bytes = property.toUtf8();
@@ -437,28 +417,33 @@ void QuickJsRuntime::ApplyConfigurationChange(const ScriptMeta& meta, const QJso
 
 void QuickJsRuntime::ApplyStaticMetadata(const ScriptMeta& meta)
 {
-    QJsonArray size;
-    size.append(static_cast<int>(meta.width));
-    size.append(static_cast<int>(meta.height));
-    SetGlobalJson("__srgb_static_size", size);
-
-    QJsonArray names;
-    for(const std::string& name : meta.led_names)
+    if(callback_state_ != nullptr)
     {
-        names.append(QString::fromStdString(name));
+        RuntimeApplyStaticMetadata(*callback_state_, meta);
     }
-    SetGlobalJson("__srgb_static_led_names", names);
+}
 
-    QJsonArray positions;
-    for(const auto& position : meta.led_positions)
+void QuickJsRuntime::ApplyFrames(
+    const QJsonObject& main_frame,
+    const QJsonObject& channel_frames,
+    const QJsonObject& subdevice_frames)
+{
+    if(callback_state_ != nullptr)
     {
-        QJsonArray item;
-        item.append(position.first);
-        item.append(position.second);
-        positions.append(item);
+        RuntimeApplyFrames(*callback_state_, main_frame, channel_frames, subdevice_frames);
     }
-    SetGlobalJson("__srgb_static_led_positions", positions);
-    Eval(kApplyStaticMetadataJs, "<static-metadata>");
+}
+
+QJsonObject QuickJsRuntime::TakeTopologyUpdate(bool force)
+{
+    return callback_state_ != nullptr ? RuntimeTakeTopologyUpdate(*callback_state_, force)
+                                      : QJsonObject();
+}
+
+QJsonArray QuickJsRuntime::ExportProperties() const
+{
+    return callback_state_ != nullptr ? RuntimeExportProperties(*callback_state_)
+                                      : QJsonArray();
 }
 
 std::vector<ScriptSource> QuickJsRuntime::LoadedModuleSources() const

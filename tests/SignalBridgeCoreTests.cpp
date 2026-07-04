@@ -17,7 +17,6 @@
 #include "domain/ScriptTypes.h"
 #include "openrgb/FrameBuilder.h"
 #include "openrgb/TopologyMapper.h"
-#include "runtime/BuiltinModules.h"
 #include "runtime/SignalRgbRuntimeFactory.h"
 
 namespace
@@ -180,9 +179,11 @@ bool TestSystemInfoModule()
     const std::string lookup = "systeminfo-test.js";
     const std::string source = R"JS(
 import systeminfo, { systeminfo as namedSysteminfo } from "@SignalRGB/systeminfo";
+import suffixedSysteminfo from "@SignalRGB/systeminfo.js";
 export function ReadSystemInfo() {
     return {
         sameExport: systeminfo === namedSysteminfo,
+        sameSpecifier: systeminfo === suffixedSysteminfo,
         motherboard: systeminfo.GetMotherboardInfo(),
         bios: systeminfo.GetBiosInfo(),
     };
@@ -203,6 +204,8 @@ export function ReadSystemInfo() {
     std::cout << "SystemInfo bios: " << bios_json.constData() << '\n';
 
     return Check(info.value("sameExport").toBool(false), "systeminfo default and named exports share implementation") &&
+           Check(info.value("sameSpecifier").toBool(false), "systeminfo import with .js suffix resolves to same module") &&
+           Check(runtime.LoadedModuleSources().size() == 1, "resource modules are not recorded as user script sources") &&
            Check(motherboard.contains("model"), "motherboard info exposes model field") &&
            Check(motherboard.contains("manufacturer"), "motherboard info exposes manufacturer field") &&
            Check(motherboard.contains("product"), "motherboard info exposes product field") &&
@@ -210,51 +213,100 @@ export function ReadSystemInfo() {
            Check(bios.contains("releaseDate"), "bios info exposes SignalRGB releaseDate field");
 }
 
-bool TestRuntimePolyfillsPreserveSystemInfo()
+bool TestNativeScanRuntime()
 {
     using namespace signalbridge;
 
-    const std::string lookup = "polyfill-systeminfo-test.js";
+    const std::string lookup = "native-scan-test.js";
     const std::string source = R"JS(
-import systeminfo from "@SignalRGB/systeminfo";
-export function ReadSystemInfo() {
+export function Probe() {
     return {
-        motherboard: systeminfo.GetMotherboardInfo(),
-        bios: systeminfo.GetBiosInfo(),
-        ram: systeminfo.GetRamInfo(),
+        write: device.write([0, 1, 2]),
+        read: device.read(4, 0),
+        hid: device.getHidInfo(),
+        endpoints: device.getHidEndpoints(),
     };
 }
 )JS";
 
     QuickJsRuntime runtime = SignalRgbRuntimeFactory::CreateScan();
-    runtime.Eval(R"JS(
-globalThis.systeminfo = {
-    GetMotherboardInfo: function() {
-        return { model: "native-model", manufacturer: "native-manufacturer", product: "native-product", vendor: "native-vendor" };
-    },
-    GetBiosInfo: function() {
-        return { vendor: "native-bios", version: "native-version", date: "native-date", releaseDate: "native-release" };
-    },
-    GetRamInfo: function() {
-        return { totalMemory: 42, modules: ["native-module"] };
-    },
-};
-)JS", "<native-systeminfo-sentinel>");
-    runtime.Eval(LoadRuntimeResourceText("js/polyfills.js"), "<runtime-polyfills>");
     runtime.LoadModule(lookup, { ScriptSource{ lookup, lookup, source } });
     runtime.EvaluateModule();
 
-    const QJsonObject info = runtime.CallModuleExportJson("ReadSystemInfo").toObject();
-    const QJsonObject motherboard = info.value("motherboard").toObject();
-    const QJsonObject bios = info.value("bios").toObject();
-    const QJsonObject ram = info.value("ram").toObject();
+    const QJsonObject info = runtime.CallModuleExportJson("Probe").toObject();
 
-    return Check(motherboard.value("model").toString() == "native-model",
-                 "runtime polyfills preserve injected motherboard systeminfo") &&
-           Check(bios.value("releaseDate").toString() == "native-release",
-                 "runtime polyfills preserve injected BIOS systeminfo") &&
-           Check(ram.value("totalMemory").toInt() == 42,
-                 "runtime polyfills preserve injected RAM systeminfo");
+    return Check(!runtime.HasGlobal("_hid_write"), "native runtime does not expose private _hid_write global") &&
+           Check(!runtime.HasGlobal("__srgb_take_topology_update"), "native runtime does not expose private topology global") &&
+           Check(info.value("write").toInt(-1) == 0, "scan runtime HID write safely returns zero") &&
+           Check(info.value("read").toArray().isEmpty(), "scan runtime HID read safely returns empty array") &&
+           Check(info.value("hid").toObject().value("vid").toInt(-1) == 0, "scan runtime exposes empty HID info") &&
+           Check(info.value("endpoints").toArray().isEmpty(), "scan runtime exposes empty HID endpoints");
+}
+
+bool TestNativeDeviceRuntime()
+{
+    using namespace signalbridge;
+
+    const std::string lookup = "native-device-test.js";
+    const std::string source = R"JS(
+export function Initialize() {
+    globalThis.hidInfo = device.getHidInfo();
+    globalThis.endpoints = device.getHidEndpoints();
+    device.setName("Native Device");
+    device.setSize([2, 1]);
+    device.setControllableLeds(["A", "B"], [[0, 0], [1, 0]]);
+}
+export function Render() {
+    globalThis.firstColor = device.color(0, 0);
+}
+export function Snapshot() {
+    return {
+        hidInfo: globalThis.hidInfo,
+        endpoints: globalThis.endpoints,
+        firstColor: globalThis.firstColor,
+    };
+}
+)JS";
+
+    ScriptMeta meta;
+    meta.lookup_path = lookup;
+    meta.source_path = lookup;
+    meta.name = "Native Device Test";
+    meta.module_sources = { ScriptSource{ lookup, lookup, source } };
+
+    HidInfo hid;
+    hid.vid = 0x1234;
+    hid.pid = 0x5678;
+
+    std::vector<EndpointDescriptor> endpoints;
+    endpoints.push_back(EndpointDescriptor{ 2, 1, 0xFF00 });
+
+    QuickJsRuntime runtime = SignalRgbRuntimeFactory::CreateDeviceRuntime(
+        nullptr,
+        meta,
+        0,
+        hid,
+        {},
+        endpoints);
+    runtime.CallModuleExportJson("Initialize");
+
+    const QJsonObject topology = runtime.TakeTopologyUpdate(true);
+    QJsonObject main_frame;
+    main_frame.insert("width", 2);
+    main_frame.insert("led_count", 2);
+    main_frame.insert("colors", QJsonArray{ 7, 8, 9, 1, 2, 3 });
+    runtime.ApplyFrames(main_frame, QJsonObject(), QJsonObject());
+    runtime.CallModuleExportJson("Render");
+    const QJsonObject snapshot = runtime.CallModuleExportJson("Snapshot").toObject();
+    const QJsonArray color = snapshot.value("firstColor").toArray();
+
+    return Check(topology.value("name").toString() == "Native Device", "native device runtime exports script-set name") &&
+           Check(topology.value("main").toObject().value("led_count").toInt() == 2, "native device runtime exports script-set LEDs") &&
+           Check(snapshot.value("hidInfo").toObject().value("vid").toInt() == 0x1234, "native device runtime exposes primary VID") &&
+           Check(snapshot.value("hidInfo").toObject().value("pid").toInt() == 0x5678, "native device runtime exposes primary PID") &&
+           Check(snapshot.value("endpoints").toArray().size() == 1, "native device runtime exposes HID endpoints") &&
+           Check(color.size() == 3 && color.at(0).toInt() == 7 && color.at(1).toInt() == 8 && color.at(2).toInt() == 9,
+                 "native device runtime reads OpenRGB frame through device.color");
 }
 
 bool TestRuntimeConfigurationCallbacks()
@@ -308,9 +360,7 @@ export function Render() {
               Check(RuntimeGlobal(runtime, "modeCallbackCount").toInt() == 0, "initial config does not call onChanged callbacks");
 
     runtime.CallModuleExportJson("Initialize");
-    QJsonArray force_topology;
-    force_topology.append(true);
-    const QJsonObject initial_topology = runtime.CallGlobalJson("__srgb_take_topology_update", force_topology).toObject();
+    const QJsonObject initial_topology = runtime.TakeTopologyUpdate(true);
     ok = Check(initial_topology.value("channels").toArray().first().toObject().value("name").toString() == "Channel 1",
                "initial topology contains first channel") &&
          ok;
@@ -327,16 +377,12 @@ export function Render() {
 
     configuration.insert("channelCount", 2);
     runtime.ApplyConfigurationChange(meta, configuration, "channelCount");
-    QJsonArray dirty_topology;
-    dirty_topology.append(false);
-    const QJsonObject changed_topology = runtime.CallGlobalJson("__srgb_take_topology_update", dirty_topology).toObject();
+    const QJsonObject changed_topology = runtime.TakeTopologyUpdate(false);
     ok = Check(changed_topology.value("channels").toArray().first().toObject().value("name").toString() == "Channel 2",
                "config callback can dirty and replace runtime topology") &&
          ok;
 
-    QJsonArray no_dirty_topology;
-    no_dirty_topology.append(false);
-    ok = Check(!runtime.CallGlobalJson("__srgb_take_topology_update", no_dirty_topology).toBool(true),
+    ok = Check(runtime.TakeTopologyUpdate(false).isEmpty(),
                "topology dirty flag is cleared after it is consumed") &&
          ok;
 
@@ -387,7 +433,8 @@ int main()
     ok = TestControlParameters() && ok;
     ok = TestDeviceConfigStore() && ok;
     ok = TestSystemInfoModule() && ok;
-    ok = TestRuntimePolyfillsPreserveSystemInfo() && ok;
+    ok = TestNativeScanRuntime() && ok;
+    ok = TestNativeDeviceRuntime() && ok;
     ok = TestRuntimeConfigurationCallbacks() && ok;
     ok = TestTopologyAndFrame() && ok;
     if(ok)

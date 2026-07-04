@@ -135,7 +135,7 @@ std::optional<ScriptMeta> ScriptMetadataExtractor::Extract(
     {
         MergeControlParameters(meta.control_parameters, runtime.CallModuleExportJson("ControllableParameters"));
     }
-    MergeControlParameters(meta.control_parameters, runtime.CallGlobalJson("__srgb_export_properties"));
+    MergeControlParameters(meta.control_parameters, runtime.ExportProperties());
     runtime.ApplyConfiguration(meta, QJsonObject());
 
     meta.vid = ValueToU16(runtime.CallModuleExportJson("VendorId"));

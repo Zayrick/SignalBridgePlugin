@@ -2,8 +2,6 @@
 
 #include <utility>
 
-#include "runtime/BuiltinModules.h"
-
 namespace signalbridge
 {
 QuickJsRuntime SignalRgbRuntimeFactory::CreateScan(ScriptLogCallback log_callback, std::string log_source)
@@ -13,8 +11,6 @@ QuickJsRuntime SignalRgbRuntimeFactory::CreateScan(ScriptLogCallback log_callbac
     state->script_name = log_source.empty() ? std::string("scanner") : std::move(log_source);
     state->log_callback = std::move(log_callback);
     runtime.SetCallbackState(std::move(state));
-    runtime.Eval(LoadRuntimeResourceText("js/scan_stubs.js"), "<scan-stubs>");
-    runtime.Eval(LoadRuntimeResourceText("js/device.js"), "<scan-device>");
     return runtime;
 }
 
@@ -45,14 +41,12 @@ QuickJsRuntime SignalRgbRuntimeFactory::CreateDeviceRuntime(
     state->active_handle = primary_handle;
     state->endpoint_handles = std::move(endpoint_handles);
     state->endpoints = std::move(endpoints);
+    state->primary_hid = primary_hid;
+    state->device.vid = primary_hid.vid;
+    state->device.pid = primary_hid.pid;
     state->script_name = meta.name;
     state->log_callback = std::move(log_callback);
     runtime.SetCallbackState(std::move(state));
-    runtime.Eval(LoadRuntimeResourceText("js/polyfills.js"), "<polyfills>");
-    runtime.Eval(LoadRuntimeResourceText("js/device.js"), "<device>");
-    runtime.Eval("device._vid = " + std::to_string(primary_hid.vid) +
-                     "; device._pid = " + std::to_string(primary_hid.pid) + ";",
-                 "<hid-info>");
     runtime.ApplyStaticMetadata(meta);
     runtime.LoadModule(meta.lookup_path, meta.module_sources);
     runtime.EvaluateModule();

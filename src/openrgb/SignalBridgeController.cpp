@@ -152,10 +152,7 @@ void SignalBridgeController::DeviceUpdateLEDs()
             }
         }
 
-        runtime_->SetGlobalJson("__srgb_main_frame", main_frame);
-        runtime_->SetGlobalJson("__srgb_channel_frames", channel_frames);
-        runtime_->SetGlobalJson("__srgb_subdevice_frames", subdevice_frames);
-        runtime_->CallGlobalJson("__srgb_apply_pending_frames");
+        runtime_->ApplyFrames(main_frame, channel_frames, subdevice_frames);
 
         if(runtime_->HasModuleExport("Render"))
         {
@@ -265,9 +262,7 @@ void SignalBridgeController::DrainPendingConfigurationChanges()
 
     try
     {
-        QJsonArray args;
-        args.append(false);
-        const QJsonObject topology = runtime_->CallGlobalJson("__srgb_take_topology_update", args).toObject();
+        const QJsonObject topology = runtime_->TakeTopologyUpdate(false);
         if(!topology.isEmpty())
         {
             BuildZonesFromTopology(topology);
@@ -326,16 +321,14 @@ void SignalBridgeController::InitializeScript()
 
     try
     {
-        MergeControlParameters(meta_.control_parameters, runtime_->CallGlobalJson("__srgb_export_properties"));
+        MergeControlParameters(meta_.control_parameters, runtime_->ExportProperties());
         runtime_->ApplyConfiguration(meta_, configuration_);
     }
     catch(...)
     {
     }
 
-    QJsonArray args;
-    args.append(true);
-    BuildZonesFromTopology(runtime_->CallGlobalJson("__srgb_take_topology_update", args).toObject());
+    BuildZonesFromTopology(runtime_->TakeTopologyUpdate(true));
 }
 
 void SignalBridgeController::BuildZonesFromTopology(const QJsonObject& topology)

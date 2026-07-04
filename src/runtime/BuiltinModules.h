@@ -6,7 +6,8 @@
 namespace signalbridge
 {
 std::string NormalizeBuiltinSpecifier(std::string specifier);
-const char* BuiltinModuleSource(const std::string& specifier);
+bool IsBuiltinModule(const std::string& specifier);
+std::string BuiltinModuleSource(const std::string& specifier);
 std::string LoadRuntimeResourceText(const std::string& relative_path);
 }
 

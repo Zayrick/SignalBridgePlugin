@@ -1,7 +1,10 @@
 <RCC>
     <qresource prefix="/SignalBridge">
-        <file alias="js/device.js">signalrgb/js/device.js</file>
-        <file alias="js/polyfills.js">signalrgb/js/polyfills.js</file>
-        <file alias="js/scan_stubs.js">signalrgb/js/scan_stubs.js</file>
+        <file alias="@SignalRGB/DeviceDiscovery.js">@SignalRGB/DeviceDiscovery.js</file>
+        <file alias="@SignalRGB/Errors.js">@SignalRGB/Errors.js</file>
+        <file alias="@SignalRGB/lcd.js">@SignalRGB/lcd.js</file>
+        <file alias="@SignalRGB/permissions.js">@SignalRGB/permissions.js</file>
+        <file alias="@SignalRGB/serial.js">@SignalRGB/serial.js</file>
+        <file alias="@SignalRGB/systeminfo.js">@SignalRGB/systeminfo.js</file>
     </qresource>
 </RCC>

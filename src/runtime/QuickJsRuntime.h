@@ -48,6 +48,9 @@ public:
     void ApplyConfiguration(const ScriptMeta& meta, const QJsonObject& configuration);
     void ApplyConfigurationChange(const ScriptMeta& meta, const QJsonObject& configuration, const QString& property);
     void ApplyStaticMetadata(const ScriptMeta& meta);
+    void ApplyFrames(const QJsonObject& main_frame, const QJsonObject& channel_frames, const QJsonObject& subdevice_frames);
+    QJsonObject TakeTopologyUpdate(bool force);
+    QJsonArray ExportProperties() const;
     std::vector<ScriptSource> LoadedModuleSources() const;
 
 private:

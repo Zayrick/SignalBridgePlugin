@@ -2,6 +2,7 @@
 
 #include "domain/PathUtils.h"
 #include "runtime/BuiltinModules.h"
+#include "runtime/RuntimeBindings.h"
 
 extern "C" {
 #include "quickjs.h"
@@ -54,7 +55,12 @@ std::string ModuleLoaderState::Resolve(const std::string& base_name, const std::
         return candidate;
     }
 
-    if(BuiltinModuleSource(module_name) != nullptr)
+    if(IsSignalBridgeHostModule(module_name))
+    {
+        return module_name;
+    }
+
+    if(IsBuiltinModule(module_name))
     {
         return NormalizeBuiltinSpecifier(module_name);
     }
@@ -121,9 +127,16 @@ JSModuleDef* LoadModule(JSContext* context, const char* module_name, void* opaqu
     }
 
     const std::string name = module_name;
-    if(const char* builtin = BuiltinModuleSource(name))
+    if(IsSignalBridgeHostModule(name))
     {
-        return CompileModule(context, name, builtin);
+        return LoadSignalBridgeHostModule(context, module_name);
+    }
+
+    if(IsBuiltinModule(name))
+    {
+        const std::string normalized = NormalizeBuiltinSpecifier(name);
+        const std::string source = BuiltinModuleSource(normalized);
+        return CompileModule(context, normalized, source);
     }
 
     const ScriptSource* source = state->Find(name);
