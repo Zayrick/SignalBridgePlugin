@@ -44,6 +44,10 @@ device_type ResolveOpenRgbDeviceType(const std::string& signalrgb_type)
     {
         return DEVICE_TYPE_MOUSEMAT;
     }
+    if(normalized == "lightingcontroller")
+    {
+        return DEVICE_TYPE_LEDSTRIP;
+    }
     if(normalized == "headphones" || normalized == "headset")
     {
         return DEVICE_TYPE_HEADSET;
@@ -51,6 +55,10 @@ device_type ResolveOpenRgbDeviceType(const std::string& signalrgb_type)
     if(normalized == "microphone")
     {
         return DEVICE_TYPE_MICROPHONE;
+    }
+    if(normalized == "speakers")
+    {
+        return DEVICE_TYPE_SPEAKER;
     }
     if(normalized == "monitor")
     {
@@ -80,7 +88,7 @@ device_type ResolveOpenRgbDeviceType(const std::string& signalrgb_type)
     {
         return DEVICE_TYPE_SPEAKER;
     }
-    if(normalized == "accessory" || normalized == "chair")
+    if(normalized == "accessory" || normalized == "chair" || normalized == "case" || normalized == "dongle" || normalized == "lcd")
     {
         return DEVICE_TYPE_ACCESSORY;
     }
