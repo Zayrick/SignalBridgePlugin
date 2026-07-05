@@ -47,6 +47,7 @@ set(SIGNALBRIDGE_CORE_SOURCES
   src/config/DeviceConfigStore.h
   src/domain/ControlParameters.cpp
   src/domain/ControlParameters.h
+  src/domain/ColorFrame.h
   src/domain/DeviceRecords.cpp
   src/domain/DeviceRecords.h
   src/domain/PathUtils.cpp

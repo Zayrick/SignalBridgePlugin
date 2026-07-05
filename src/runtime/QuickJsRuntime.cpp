@@ -92,6 +92,11 @@ void QuickJsRuntime::SetCallbackState(std::unique_ptr<RuntimeCallbackState> stat
     RegisterRuntimeCallbacks(context_);
 }
 
+RuntimeCallbackState* QuickJsRuntime::MutableState()
+{
+    return callback_state_.get();
+}
+
 void QuickJsRuntime::Eval(const std::string& source, const std::string& name)
 {
     JSValue result = JS_Eval(context_, source.c_str(), source.size(), name.c_str(), JS_EVAL_TYPE_GLOBAL);
@@ -411,17 +416,6 @@ void QuickJsRuntime::ApplyStaticMetadata(const ScriptMeta& meta)
     if(callback_state_ != nullptr)
     {
         RuntimeApplyStaticMetadata(*callback_state_, meta);
-    }
-}
-
-void QuickJsRuntime::ApplyFrames(
-    const QJsonObject& main_frame,
-    const QJsonObject& channel_frames,
-    const QJsonObject& subdevice_frames)
-{
-    if(callback_state_ != nullptr)
-    {
-        RuntimeApplyFrames(*callback_state_, main_frame, channel_frames, subdevice_frames);
     }
 }
 

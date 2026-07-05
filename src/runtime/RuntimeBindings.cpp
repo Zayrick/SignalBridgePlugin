@@ -314,18 +314,13 @@ const RuntimeSubdeviceState* FindSubdevice(const RuntimeDeviceState& device, con
     return nullptr;
 }
 
-RuntimeColorFrame FrameFromJson(const QJsonObject& object)
+void RebuildSubdevicePositionIndex(RuntimeSubdeviceState& subdevice)
 {
-    RuntimeColorFrame frame;
-    frame.width = std::max(1, object.value("width").toInt(1));
-    const QJsonArray colors = object.value("colors").toArray();
-    frame.colors.reserve(static_cast<std::size_t>(colors.size()));
-    for(const QJsonValue& value : colors)
+    subdevice.led_position_index.clear();
+    for(std::size_t idx = 0; idx < subdevice.led_positions.size(); idx++)
     {
-        frame.colors.push_back(static_cast<std::uint8_t>(std::clamp(value.toInt(), 0, 255)));
+        subdevice.led_position_index[subdevice.led_positions[idx]] = idx;
     }
-    frame.led_count = object.value("led_count").toInt(static_cast<int>(frame.colors.size() / 3));
-    return frame;
 }
 
 void ResizeFrameColors(std::vector<std::uint8_t>& colors, int led_count)
@@ -338,34 +333,6 @@ void ResizeFrameColors(std::vector<std::uint8_t>& colors, int led_count)
     colors.resize(static_cast<std::size_t>(led_count) * 3, 0);
 }
 
-void ApplyChannelFrame(RuntimeChannelState& channel, const QJsonObject& object)
-{
-    if(!object.contains("colors"))
-    {
-        channel.colors.clear();
-        channel.led_count = 0;
-        channel.needs_pulse = true;
-        return;
-    }
-
-    RuntimeColorFrame frame = FrameFromJson(object);
-    if(channel.led_limit > 0 && frame.led_count > channel.led_limit)
-    {
-        frame.led_count = channel.led_limit;
-    }
-    ResizeFrameColors(frame.colors, frame.led_count);
-    channel.colors = std::move(frame.colors);
-    channel.led_count = std::max(0, frame.led_count);
-    channel.needs_pulse = channel.led_count == 0;
-}
-
-void ApplySubdeviceFrame(RuntimeSubdeviceState& subdevice, const QJsonObject& object)
-{
-    RuntimeColorFrame frame = FrameFromJson(object);
-    ResizeFrameColors(frame.colors, SubdeviceLedCount(subdevice));
-    subdevice.colors = std::move(frame.colors);
-}
-
 std::string ThisChannelName(JSContext* context, JSValueConst this_val)
 {
     JSValue name = JS_GetPropertyStr(context, this_val, "__name");
@@ -374,9 +341,8 @@ std::string ThisChannelName(JSContext* context, JSValueConst this_val)
     return result;
 }
 
-std::vector<std::uint8_t> ReorderFlatColors(const std::vector<std::uint8_t>& colors, const std::string& order)
+void ColorOrderMap(const std::string& order, int map[3])
 {
-    int map[3] = { 0, 1, 2 };
     std::string normalized = order;
     std::transform(normalized.begin(), normalized.end(), normalized.begin(), [](unsigned char ch) {
         return static_cast<char>(std::toupper(ch));
@@ -408,44 +374,69 @@ std::vector<std::uint8_t> ReorderFlatColors(const std::vector<std::uint8_t>& col
         map[0] = 2;
         map[2] = 0;
     }
+}
 
-    std::vector<std::uint8_t> result;
-    result.reserve(colors.size());
+std::uint8_t ColorByte(const std::vector<std::uint8_t>& colors, std::size_t index)
+{
+    return index < colors.size() ? colors[index] : static_cast<std::uint8_t>(0);
+}
+
+JSValue RgbToJsArray(JSContext* context, std::uint8_t r, std::uint8_t g, std::uint8_t b)
+{
+    JSValue array = JS_NewArray(context);
+    JS_SetPropertyUint32(context, array, 0, JS_NewInt32(context, r));
+    JS_SetPropertyUint32(context, array, 1, JS_NewInt32(context, g));
+    JS_SetPropertyUint32(context, array, 2, JS_NewInt32(context, b));
+    return array;
+}
+
+JSValue SeparateColorsToJs(JSContext* context, const std::vector<std::uint8_t>& colors, const int map[3])
+{
+    JSValue channels = JS_NewArray(context);
+    JSValue first = JS_NewArray(context);
+    JSValue second = JS_NewArray(context);
+    JSValue third = JS_NewArray(context);
+    const std::size_t led_count = (colors.size() + 2) / 3;
+    for(std::size_t led_idx = 0; led_idx < led_count; led_idx++)
+    {
+        const std::size_t base = led_idx * 3;
+        JS_SetPropertyUint32(context, first, static_cast<std::uint32_t>(led_idx), JS_NewInt32(context, ColorByte(colors, base + map[0])));
+        JS_SetPropertyUint32(context, second, static_cast<std::uint32_t>(led_idx), JS_NewInt32(context, ColorByte(colors, base + map[1])));
+        JS_SetPropertyUint32(context, third, static_cast<std::uint32_t>(led_idx), JS_NewInt32(context, ColorByte(colors, base + map[2])));
+    }
+    JS_SetPropertyUint32(context, channels, 0, first);
+    JS_SetPropertyUint32(context, channels, 1, second);
+    JS_SetPropertyUint32(context, channels, 2, third);
+    return channels;
+}
+
+JSValue InlineColorsToJs(JSContext* context, const std::vector<std::uint8_t>& colors, const int map[3])
+{
+    if(map[0] == 0 && map[1] == 1 && map[2] == 2)
+    {
+        return BytesToJsArray(context, colors);
+    }
+
+    JSValue array = JS_NewArray(context);
+    std::uint32_t out_idx = 0;
     for(std::size_t idx = 0; idx < colors.size(); idx += 3)
     {
-        const std::uint8_t rgb[3] = {
-            idx < colors.size() ? colors[idx] : static_cast<std::uint8_t>(0),
-            idx + 1 < colors.size() ? colors[idx + 1] : static_cast<std::uint8_t>(0),
-            idx + 2 < colors.size() ? colors[idx + 2] : static_cast<std::uint8_t>(0),
-        };
-        result.push_back(rgb[map[0]]);
-        result.push_back(rgb[map[1]]);
-        result.push_back(rgb[map[2]]);
+        JS_SetPropertyUint32(context, array, out_idx++, JS_NewInt32(context, ColorByte(colors, idx + map[0])));
+        JS_SetPropertyUint32(context, array, out_idx++, JS_NewInt32(context, ColorByte(colors, idx + map[1])));
+        JS_SetPropertyUint32(context, array, out_idx++, JS_NewInt32(context, ColorByte(colors, idx + map[2])));
     }
-    return result;
+    return array;
 }
 
 JSValue ColorsToJs(JSContext* context, const std::vector<std::uint8_t>& colors, const std::string& format, const std::string& order)
 {
-    const std::vector<std::uint8_t> reordered = ReorderFlatColors(colors, order);
+    int map[3] = { 0, 1, 2 };
+    ColorOrderMap(order, map);
     if(format == "Separate" || format == "Seperate")
     {
-        QJsonArray channels;
-        QJsonArray first;
-        QJsonArray second;
-        QJsonArray third;
-        for(std::size_t idx = 0; idx < reordered.size(); idx += 3)
-        {
-            first.append(static_cast<int>(reordered[idx]));
-            second.append(static_cast<int>(idx + 1 < reordered.size() ? reordered[idx + 1] : 0));
-            third.append(static_cast<int>(idx + 2 < reordered.size() ? reordered[idx + 2] : 0));
-        }
-        channels.append(first);
-        channels.append(second);
-        channels.append(third);
-        return JsonToJsValue(context, channels, "<colors>");
+        return SeparateColorsToJs(context, colors, map);
     }
-    return BytesToJsArray(context, reordered);
+    return InlineColorsToJs(context, colors, map);
 }
 
 JSValue HidWriteJs(JSContext* context, JSValueConst, int argc, JSValueConst* argv)
@@ -704,13 +695,9 @@ JSValue DeviceGetDeviceInfoJs(JSContext* context, JSValueConst, int, JSValueCons
 JSValue DeviceColorJs(JSContext* context, JSValueConst, int argc, JSValueConst* argv)
 {
     RuntimeCallbackState* state = RuntimeCallbacks(context);
-    QJsonArray color;
-    color.append(0);
-    color.append(0);
-    color.append(0);
     if(state == nullptr || argc < 2)
     {
-        return JsonToJsValue(context, color, "<color>");
+        return RgbToJsArray(context, 0, 0, 0);
     }
 
     const int x = JsToInt(context, argv[0], 0);
@@ -720,23 +707,21 @@ JSValue DeviceColorJs(JSContext* context, JSValueConst, int argc, JSValueConst* 
     const int idx = ((y * width) + x) * 3;
     if(idx >= 0 && static_cast<std::size_t>(idx + 2) < frame.colors.size())
     {
-        color.replace(0, static_cast<int>(frame.colors[static_cast<std::size_t>(idx)]));
-        color.replace(1, static_cast<int>(frame.colors[static_cast<std::size_t>(idx + 1)]));
-        color.replace(2, static_cast<int>(frame.colors[static_cast<std::size_t>(idx + 2)]));
+        return RgbToJsArray(
+            context,
+            frame.colors[static_cast<std::size_t>(idx)],
+            frame.colors[static_cast<std::size_t>(idx + 1)],
+            frame.colors[static_cast<std::size_t>(idx + 2)]);
     }
-    return JsonToJsValue(context, color, "<color>");
+    return RgbToJsArray(context, 0, 0, 0);
 }
 
 JSValue DeviceSubdeviceColorJs(JSContext* context, JSValueConst, int argc, JSValueConst* argv)
 {
     RuntimeCallbackState* state = RuntimeCallbacks(context);
-    QJsonArray color;
-    color.append(0);
-    color.append(0);
-    color.append(0);
     if(state == nullptr || argc < 3)
     {
-        return JsonToJsValue(context, color, "<subdevice-color>");
+        return RgbToJsArray(context, 0, 0, 0);
     }
 
     const std::string name = JsToString(context, argv[0]);
@@ -745,23 +730,18 @@ JSValue DeviceSubdeviceColorJs(JSContext* context, JSValueConst, int argc, JSVal
     const RuntimeSubdeviceState* subdevice = FindSubdevice(state->device, name);
     if(subdevice == nullptr)
     {
-        return JsonToJsValue(context, color, "<subdevice-color>");
+        return RgbToJsArray(context, 0, 0, 0);
     }
-    for(std::size_t idx = 0; idx < subdevice->led_positions.size(); idx++)
+    const auto it = subdevice->led_position_index.find({ x, y });
+    if(it != subdevice->led_position_index.end())
     {
-        if(subdevice->led_positions[idx].first == x && subdevice->led_positions[idx].second == y)
+        const std::size_t color_idx = it->second * 3;
+        if(color_idx + 2 < subdevice->colors.size())
         {
-            const std::size_t color_idx = idx * 3;
-            if(color_idx + 2 < subdevice->colors.size())
-            {
-                color.replace(0, static_cast<int>(subdevice->colors[color_idx]));
-                color.replace(1, static_cast<int>(subdevice->colors[color_idx + 1]));
-                color.replace(2, static_cast<int>(subdevice->colors[color_idx + 2]));
-            }
-            break;
+            return RgbToJsArray(context, subdevice->colors[color_idx], subdevice->colors[color_idx + 1], subdevice->colors[color_idx + 2]);
         }
     }
-    return JsonToJsValue(context, color, "<subdevice-color>");
+    return RgbToJsArray(context, 0, 0, 0);
 }
 
 JSValue DeviceGetLedCountJs(JSContext* context, JSValueConst, int, JSValueConst*)
@@ -1314,6 +1294,7 @@ JSValue DeviceSetSubdeviceLedsJs(JSContext* context, JSValueConst, int argc, JSV
             {
                 subdevice->led_names = names;
                 subdevice->led_positions = positions;
+                RebuildSubdevicePositionIndex(*subdevice);
                 ResizeFrameColors(subdevice->colors, SubdeviceLedCount(*subdevice));
                 state->device.topology_dirty = true;
             }
@@ -1525,34 +1506,6 @@ void RuntimeApplyStaticMetadata(RuntimeCallbackState& state, const ScriptMeta& m
     device.led_positions = meta.led_positions;
     device.led_count = static_cast<int>(std::max(device.led_names.size(), device.led_positions.size()));
     device.topology_dirty = true;
-}
-
-void RuntimeApplyFrames(
-    RuntimeCallbackState& state,
-    const QJsonObject& main_frame,
-    const QJsonObject& channel_frames,
-    const QJsonObject& subdevice_frames)
-{
-    if(main_frame.contains("colors"))
-    {
-        state.device.main_frame = FrameFromJson(main_frame);
-    }
-    else
-    {
-        state.device.main_frame.colors.clear();
-        state.device.main_frame.led_count = 0;
-        state.device.main_frame.width = std::max(1, state.device.width);
-    }
-
-    for(RuntimeChannelState& channel : state.device.channels)
-    {
-        ApplyChannelFrame(channel, channel_frames.value(QString::fromStdString(channel.name)).toObject());
-    }
-
-    for(RuntimeSubdeviceState& subdevice : state.device.subdevices)
-    {
-        ApplySubdeviceFrame(subdevice, subdevice_frames.value(QString::fromStdString(subdevice.name)).toObject());
-    }
 }
 
 QJsonObject RuntimeTakeTopologyUpdate(RuntimeCallbackState& state, bool force)

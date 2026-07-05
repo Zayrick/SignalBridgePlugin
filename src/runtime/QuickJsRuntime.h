@@ -34,6 +34,7 @@ public:
     QuickJsRuntime& operator=(QuickJsRuntime&& other) noexcept;
 
     void SetCallbackState(std::unique_ptr<RuntimeCallbackState> state);
+    RuntimeCallbackState* MutableState();
 
     void Eval(const std::string& source, const std::string& name);
     void LoadModule(const std::string& lookup_path, const std::vector<ScriptSource>& catalog);
@@ -46,7 +47,6 @@ public:
     void ApplyConfiguration(const ScriptMeta& meta, const QJsonObject& configuration);
     void ApplyConfigurationChange(const ScriptMeta& meta, const QJsonObject& configuration, const QString& property);
     void ApplyStaticMetadata(const ScriptMeta& meta);
-    void ApplyFrames(const QJsonObject& main_frame, const QJsonObject& channel_frames, const QJsonObject& subdevice_frames);
     QJsonObject TakeTopologyUpdate(bool force);
     QJsonArray ExportProperties() const;
     std::vector<ScriptSource> LoadedModuleSources() const;

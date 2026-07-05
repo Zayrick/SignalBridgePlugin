@@ -1,4 +1,5 @@
 #include <algorithm>
+#include <cstdint>
 #include <iostream>
 #include <string>
 #include <utility>
@@ -361,11 +362,10 @@ export function Snapshot() {
     runtime.CallModuleExportJson("Initialize");
 
     const QJsonObject topology = runtime.TakeTopologyUpdate(true);
-    QJsonObject main_frame;
-    main_frame.insert("width", 2);
-    main_frame.insert("led_count", 2);
-    main_frame.insert("colors", QJsonArray{ 7, 8, 9, 1, 2, 3 });
-    runtime.ApplyFrames(main_frame, QJsonObject(), QJsonObject());
+    RuntimeCallbackState* runtime_state = runtime.MutableState();
+    runtime_state->device.main_frame.width = 2;
+    runtime_state->device.main_frame.led_count = 2;
+    runtime_state->device.main_frame.colors = { 7, 8, 9, 1, 2, 3 };
     runtime.CallModuleExportJson("Render");
     const QJsonObject snapshot = runtime.CallModuleExportJson("Snapshot").toObject();
     const QJsonArray color = snapshot.value("firstColor").toArray();
@@ -550,12 +550,13 @@ bool TestTopologyAndFrame()
         ToRGBColor(1, 2, 3),
         ToRGBColor(4, 5, 6),
     };
-    const QJsonObject frame = BuildFrameForZone(topology.zones, colors, 0, topology.targets[0]);
-    const QJsonArray bytes = frame.value("colors").toArray();
+    RuntimeColorFrame frame;
+    BuildFrameForZone(topology.zones, colors, 0, topology.targets[0], frame);
+    const std::vector<std::uint8_t>& bytes = frame.colors;
     ok = ok &&
          Check(bytes.size() == 12, "matrix frame expands to canvas cell count") &&
-         Check(bytes.at(0).toInt() == 1 && bytes.at(1).toInt() == 2 && bytes.at(2).toInt() == 3, "frame encodes first RGB triplet") &&
-         Check(bytes.at(3).toInt() == 4 && bytes.at(4).toInt() == 5 && bytes.at(5).toInt() == 6, "frame encodes second RGB triplet");
+         Check(bytes.at(0) == 1 && bytes.at(1) == 2 && bytes.at(2) == 3, "frame encodes first RGB triplet") &&
+         Check(bytes.at(3) == 4 && bytes.at(4) == 5 && bytes.at(5) == 6, "frame encodes second RGB triplet");
 
     DeleteZoneMaps(topology.zones);
     return ok;

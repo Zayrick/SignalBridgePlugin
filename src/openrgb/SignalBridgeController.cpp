@@ -86,6 +86,63 @@ device_type ResolveOpenRgbDeviceType(const std::string& signalrgb_type)
     }
     return DEVICE_TYPE_UNKNOWN;
 }
+
+RuntimeChannelState* FindRuntimeChannel(RuntimeDeviceState& device, const std::string& name)
+{
+    const auto it = std::find_if(device.channels.begin(), device.channels.end(), [&](const RuntimeChannelState& channel) {
+        return channel.name == name;
+    });
+    return it != device.channels.end() ? &*it : nullptr;
+}
+
+RuntimeSubdeviceState* FindRuntimeSubdevice(RuntimeDeviceState& device, const std::string& name)
+{
+    const auto it = std::find_if(device.subdevices.begin(), device.subdevices.end(), [&](const RuntimeSubdeviceState& subdevice) {
+        return subdevice.name == name;
+    });
+    return it != device.subdevices.end() ? &*it : nullptr;
+}
+
+std::size_t RuntimeSubdeviceColorBytes(const RuntimeSubdeviceState& subdevice)
+{
+    return std::max(subdevice.led_names.size(), subdevice.led_positions.size()) * 3;
+}
+
+void ClearMainFrame(RuntimeDeviceState& device)
+{
+    device.main_frame.colors.clear();
+    device.main_frame.led_count = 0;
+    device.main_frame.width = std::max(1, device.width);
+}
+
+void ClearChannelFrame(RuntimeChannelState& channel)
+{
+    channel.colors.clear();
+    channel.led_count = 0;
+    channel.needs_pulse = true;
+}
+
+void ClearSubdeviceFrame(RuntimeSubdeviceState& subdevice)
+{
+    subdevice.colors.assign(RuntimeSubdeviceColorBytes(subdevice), 0);
+}
+
+void FinalizeChannelFrame(RuntimeChannelState& channel)
+{
+    std::size_t led_count = channel.colors.size() / 3;
+    if(channel.led_limit > 0 && led_count > static_cast<std::size_t>(channel.led_limit))
+    {
+        led_count = static_cast<std::size_t>(channel.led_limit);
+        channel.colors.resize(led_count * 3);
+    }
+    channel.led_count = static_cast<int>(led_count);
+    channel.needs_pulse = channel.led_count == 0;
+}
+
+void FinalizeSubdeviceFrame(RuntimeSubdeviceState& subdevice)
+{
+    subdevice.colors.resize(RuntimeSubdeviceColorBytes(subdevice), 0);
+}
 }
 
 SignalBridgeController::SignalBridgeController(
@@ -229,29 +286,46 @@ void SignalBridgeController::DeviceUpdateLEDs()
     {
         DrainPendingConfigurationChanges();
 
-        QJsonObject main_frame;
-        QJsonObject channel_frames;
-        QJsonObject subdevice_frames;
+        RuntimeCallbackState* runtime_state = runtime_->MutableState();
+        if(runtime_state == nullptr)
+        {
+            return;
+        }
+        RuntimeDeviceState& device = runtime_state->device;
+        ClearMainFrame(device);
+        for(RuntimeChannelState& channel : device.channels)
+        {
+            ClearChannelFrame(channel);
+        }
+        for(RuntimeSubdeviceState& subdevice : device.subdevices)
+        {
+            ClearSubdeviceFrame(subdevice);
+        }
 
         for(std::size_t zone_idx = 0; zone_idx < zones.size() && zone_idx < zone_targets_.size(); zone_idx++)
         {
             const ZoneTarget& target = zone_targets_[zone_idx];
-            const QJsonObject frame = BuildFrameForZone(zones, colors, static_cast<unsigned int>(zone_idx), target);
             switch(target.kind)
             {
             case ZoneTarget::Kind::Main:
-                main_frame = frame;
+                BuildFrameForZone(zones, colors, static_cast<unsigned int>(zone_idx), target, device.main_frame);
                 break;
             case ZoneTarget::Kind::Channel:
-                channel_frames.insert(QString::fromStdString(target.key), frame);
+                if(RuntimeChannelState* channel = FindRuntimeChannel(device, target.key))
+                {
+                    BuildFrameColorsForZone(zones, colors, static_cast<unsigned int>(zone_idx), target, channel->colors);
+                    FinalizeChannelFrame(*channel);
+                }
                 break;
             case ZoneTarget::Kind::Subdevice:
-                subdevice_frames.insert(QString::fromStdString(target.key), frame);
+                if(RuntimeSubdeviceState* subdevice = FindRuntimeSubdevice(device, target.key))
+                {
+                    BuildFrameColorsForZone(zones, colors, static_cast<unsigned int>(zone_idx), target, subdevice->colors);
+                    FinalizeSubdeviceFrame(*subdevice);
+                }
                 break;
             }
         }
-
-        runtime_->ApplyFrames(main_frame, channel_frames, subdevice_frames);
 
         if(runtime_->HasModuleExport("Render"))
         {

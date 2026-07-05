@@ -11,6 +11,7 @@
 #include <QJsonObject>
 #include <QJsonValue>
 
+#include "domain/ColorFrame.h"
 #include "domain/ScriptTypes.h"
 #include "hid/HidBackend.h"
 #include "serial/SerialBackend.h"
@@ -20,13 +21,6 @@ struct JSModuleDef;
 
 namespace signalbridge
 {
-struct RuntimeColorFrame
-{
-    std::vector<std::uint8_t> colors;
-    int width = 1;
-    int led_count = 0;
-};
-
 struct RuntimeChannelState
 {
     std::string name;
@@ -45,6 +39,7 @@ struct RuntimeSubdeviceState
     int height = 1;
     std::vector<std::string> led_names;
     std::vector<std::pair<int, int>> led_positions;
+    std::map<std::pair<int, int>, std::size_t> led_position_index;
     std::vector<std::uint8_t> colors;
 };
 
@@ -91,11 +86,6 @@ RuntimeCallbackState* RuntimeCallbacks(JSContext* context);
 bool IsSignalBridgeHostModule(const std::string& specifier);
 JSModuleDef* LoadSignalBridgeHostModule(JSContext* context, const char* module_name);
 void RuntimeApplyStaticMetadata(RuntimeCallbackState& state, const ScriptMeta& meta);
-void RuntimeApplyFrames(
-    RuntimeCallbackState& state,
-    const QJsonObject& main_frame,
-    const QJsonObject& channel_frames,
-    const QJsonObject& subdevice_frames);
 QJsonObject RuntimeTakeTopologyUpdate(RuntimeCallbackState& state, bool force);
 QJsonArray RuntimeExportProperties(const RuntimeCallbackState& state);
 }
