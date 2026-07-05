@@ -1,0 +1,197 @@
+name: Qt5 release
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  BUILD_TYPE: Release
+  SIGNALBRIDGEPLUGIN_COMMIT: ${{ github.sha }}
+
+jobs:
+  build:
+    name: ${{ matrix.asset }}
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows
+            runner: windows-2022
+            asset: SignalBridgePlugin-qt5-windows-x64
+            qt_arch: win64_msvc2019_64
+            cmake_arch: x64
+          - os: windows
+            runner: windows-2022
+            asset: SignalBridgePlugin-qt5-windows-x86
+            qt_arch: win32_msvc2019
+            cmake_arch: Win32
+          - os: linux
+            runner: ubuntu-24.04
+            asset: SignalBridgePlugin-qt5-linux-amd64
+            platform: linux/amd64
+          - os: linux
+            runner: ubuntu-24.04
+            asset: SignalBridgePlugin-qt5-linux-i386
+            platform: linux/386
+          - os: linux
+            runner: ubuntu-24.04
+            asset: SignalBridgePlugin-qt5-linux-arm64
+            platform: linux/arm64
+          - os: linux
+            runner: ubuntu-24.04
+            asset: SignalBridgePlugin-qt5-linux-armhf
+            platform: linux/arm/v7
+          - os: macos
+            runner: macos-15
+            asset: SignalBridgePlugin-qt5-macos-apple
+            cmake_arch: arm64
+          - os: macos
+            runner: macos-15-intel
+            asset: SignalBridgePlugin-qt5-macos-intel
+            cmake_arch: x86_64
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          submodules: recursive
+
+      - name: Install Qt
+        if: matrix.os == 'windows'
+        uses: jurplel/install-qt-action@v4
+        with:
+          version: '5.15.2'
+          host: windows
+          target: desktop
+          arch: ${{ matrix.qt_arch }}
+          cache: true
+
+      - name: Build
+        if: matrix.os == 'windows'
+        shell: pwsh
+        run: |
+          cmake -S . -B build -A "${{ matrix.cmake_arch }}" -DCMAKE_CONFIGURATION_TYPES=${env:BUILD_TYPE} -DCMAKE_PREFIX_PATH="${env:QT_ROOT_DIR}" -DSIGNALBRIDGE_BUILD_TESTS=OFF
+          cmake --build build --config "${env:BUILD_TYPE}" --target SignalBridgePlugin --parallel
+          New-Item -ItemType Directory -Force package, dist | Out-Null
+          $plugin = Get-ChildItem build -Recurse -Filter SignalBridgePlugin.dll | Where-Object { $_.FullName -match "\\${env:BUILD_TYPE}\\" } | Select-Object -First 1
+          if (-not $plugin) { throw "SignalBridgePlugin.dll not found" }
+          Copy-Item $plugin.FullName package\
+          Copy-Item LICENSE package\
+          Compress-Archive -Path package\* -DestinationPath "dist\${{ matrix.asset }}.zip" -Force
+
+      - name: Enable Linux emulation
+        if: matrix.os == 'linux' && matrix.platform != 'linux/amd64'
+        run: docker run --privileged --rm tonistiigi/binfmt --install all
+
+      - name: Build
+        if: matrix.os == 'linux'
+        run: |
+          docker run --rm --platform "${{ matrix.platform }}" \
+            -e DEBIAN_FRONTEND=noninteractive \
+            -e SIGNALBRIDGEPLUGIN_COMMIT \
+            -e HOST_UID="$(id -u)" \
+            -e HOST_GID="$(id -g)" \
+            -v "${GITHUB_WORKSPACE}:/work" \
+            -w /work \
+            debian:bookworm \
+            bash -lc '
+              set -euo pipefail
+              apt-get update
+              apt-get install -y --no-install-recommends build-essential ca-certificates cmake ninja-build pkg-config qtbase5-dev libgl1-mesa-dev libudev-dev
+              cmake -S . -B "build/${{ matrix.asset }}" -G Ninja -DCMAKE_BUILD_TYPE=Release -DSIGNALBRIDGE_BUILD_TESTS=OFF
+              cmake --build "build/${{ matrix.asset }}" --target SignalBridgePlugin --parallel
+              mkdir -p package dist
+              plugin="$(find "build/${{ matrix.asset }}" -name libSignalBridgePlugin.so -type f | head -n 1)"
+              test -n "$plugin"
+              cp "$plugin" package/
+              cp LICENSE package/
+              tar -C package -czf "dist/${{ matrix.asset }}.tar.gz" .
+              chown -R "$HOST_UID:$HOST_GID" "build/${{ matrix.asset }}" package dist
+            '
+
+      - name: Install Ninja
+        if: matrix.os == 'macos'
+        run: brew install ninja
+
+      - name: Install Qt
+        if: matrix.os == 'macos' && matrix.cmake_arch == 'x86_64'
+        uses: jurplel/install-qt-action@v4
+        with:
+          version: '5.15.2'
+          host: mac
+          target: desktop
+          arch: clang_64
+          cache: true
+
+      - name: Install Qt
+        if: matrix.os == 'macos' && matrix.cmake_arch == 'arm64'
+        run: brew install qt@5
+
+      - name: Build
+        if: matrix.os == 'macos'
+        run: |
+          if [ "${{ matrix.cmake_arch }}" = "arm64" ]; then
+            qt_prefix="$(brew --prefix qt@5)"
+          else
+            qt_prefix="${QT_ROOT_DIR}"
+          fi
+          cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE="${BUILD_TYPE}" -DCMAKE_PREFIX_PATH="${qt_prefix}" -DCMAKE_OSX_ARCHITECTURES="${{ matrix.cmake_arch }}" -DSIGNALBRIDGE_BUILD_TESTS=OFF
+          cmake --build build --target SignalBridgePlugin --parallel
+          mkdir -p package dist
+          plugin="$(find build \( -name libSignalBridgePlugin.dylib -o -name SignalBridgePlugin.dylib \) -type f | head -n 1)"
+          test -n "$plugin"
+          cp "$plugin" package/
+          cp LICENSE package/
+          tar -C package -czf "dist/${{ matrix.asset }}.tar.gz" .
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: ${{ matrix.asset }}
+          path: dist/${{ matrix.asset }}.*
+          if-no-files-found: error
+
+  publish:
+    name: Publish main-latest
+    needs: build
+    runs-on: ubuntu-24.04
+    permissions:
+      actions: read
+      contents: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Download artifacts
+        uses: actions/download-artifact@v8
+        with:
+          path: release-assets
+          pattern: SignalBridgePlugin-qt5-*
+          merge-multiple: true
+
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: main-latest
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git tag -f "$TAG" "$GITHUB_SHA"
+          git push -f origin "refs/tags/$TAG"
+
+          notes="Automated Qt5 build from main at ${GITHUB_SHA}."
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release edit "$TAG" --title "Latest main Qt5 build" --notes "$notes" --prerelease
+          else
+            gh release create "$TAG" --title "Latest main Qt5 build" --notes "$notes" --prerelease
+          fi
+
+          gh release upload "$TAG" release-assets/* --clobber
