@@ -14,8 +14,6 @@ extern "C" {
 
 namespace signalbridge
 {
-std::string JsonValueToString(const QJsonValue& value);
-QJsonValue JsonValueFromString(const char* value);
 JSValue JsonToJsValue(JSContext* context, const QJsonValue& value, const std::string& name);
 QJsonValue JsValueToJson(JSContext* context, JSValueConst value);
 std::vector<std::uint8_t> JsValueToBytes(JSContext* context, JSValueConst value);

@@ -22,16 +22,12 @@ struct ScanReport
     std::vector<ScanError> errors;
 };
 
-using ScanProgressCallback = std::function<void(std::size_t completed, std::size_t total, const std::string& path)>;
+using ScanProgressCallback = std::function<void(std::size_t completed, std::size_t total)>;
 
-class ScriptScanner
-{
-public:
-    ScanReport ScanDirectory(
-        const std::string& script_directory,
-        ScanProgressCallback progress_callback = {},
-        ScriptLogCallback log_callback = {}) const;
-};
+ScanReport ScanDirectory(
+    const std::string& script_directory,
+    ScanProgressCallback progress_callback = {},
+    ScriptLogCallback log_callback = {});
 }
 
 #endif // SIGNALBRIDGE_SCRIPT_SCANNER_H

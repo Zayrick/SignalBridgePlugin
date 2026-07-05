@@ -34,7 +34,6 @@ public:
     QuickJsRuntime& operator=(QuickJsRuntime&& other) noexcept;
 
     void SetCallbackState(std::unique_ptr<RuntimeCallbackState> state);
-    RuntimeCallbackState* CallbackState();
 
     void Eval(const std::string& source, const std::string& name);
     void LoadModule(const std::string& lookup_path, const std::vector<ScriptSource>& catalog);
@@ -43,7 +42,6 @@ public:
     bool HasModuleExport(const std::string& name);
     QJsonValue CallGlobalJson(const std::string& name, const QJsonArray& args = QJsonArray());
     QJsonValue CallModuleExportJson(const std::string& name, const QJsonArray& args = QJsonArray());
-    void SetGlobalJson(const std::string& name, const QJsonValue& value);
     void ApplyConfigurationValues(const QJsonObject& configuration);
     void ApplyConfiguration(const ScriptMeta& meta, const QJsonObject& configuration);
     void ApplyConfigurationChange(const ScriptMeta& meta, const QJsonObject& configuration, const QString& property);
@@ -56,6 +54,7 @@ public:
 private:
     void Reset();
     void ClearModuleState();
+    void SetGlobalJson(const std::string& name, const QJsonValue& value);
     std::string FormatException() const;
 
     JSRuntime* runtime_ = nullptr;

@@ -1,11 +1,12 @@
 #include "domain/DeviceRecords.h"
 
 #include <QFileInfo>
-#include <QJsonDocument>
 
 #include "hid/HidBackend.h"
 
 namespace signalbridge
+{
+namespace
 {
 QString FormatHex16(std::uint16_t value)
 {
@@ -21,6 +22,7 @@ QString FormatPidList(const std::vector<std::uint16_t>& pids)
     }
     return values.join(", ");
 }
+}
 
 QString ConfigKeyForScript(const ScriptMeta& meta)
 {
@@ -29,6 +31,8 @@ QString ConfigKeyForScript(const ScriptMeta& meta)
     return key;
 }
 
+namespace
+{
 QString DeviceIdentityForHid(const HidInfo& hid)
 {
     if(!hid.serial.empty())
@@ -57,6 +61,32 @@ QString DeviceIdentityForSerial(const SerialInfo& serial)
     return QString::fromStdString(serial.system_location);
 }
 
+QJsonArray ControlParametersJson(const ScriptMeta& meta)
+{
+    QJsonArray parameters;
+    for(const QJsonObject& parameter : meta.control_parameters)
+    {
+        parameters.append(parameter);
+    }
+    return parameters;
+}
+
+QJsonObject BaseDeviceRecord(const ScriptMeta& meta, const QString& key)
+{
+    const QString source_path = QString::fromStdString(meta.source_path);
+    QJsonObject device;
+    device.insert("key", key);
+    device.insert("script_key", ConfigKeyForScript(meta));
+    device.insert("name", QString::fromStdString(meta.name));
+    device.insert("file", QFileInfo(source_path).fileName());
+    device.insert("source_path", source_path);
+    device.insert("device_type", QString::fromStdString(meta.device_type));
+    device.insert("publisher", QString::fromStdString(meta.publisher));
+    device.insert("parameters", ControlParametersJson(meta));
+    return device;
+}
+}
+
 QString ConfigKeyForDevice(const ScriptMeta& meta, const HidInfo& hid)
 {
     return ConfigKeyForScript(meta) + "|" + DeviceIdentityForHid(hid);
@@ -69,60 +99,23 @@ QString ConfigKeyForDevice(const ScriptMeta& meta, const SerialInfo& serial)
 
 QJsonObject DeviceRecordForController(const ScriptMeta& meta, const HidInfo& hid, const QString& key)
 {
-    const QString source_path = QString::fromStdString(meta.source_path);
-
-    QJsonArray parameters;
-    for(const QJsonObject& parameter : meta.control_parameters)
-    {
-        parameters.append(parameter);
-    }
-
-    QJsonObject device;
-    device.insert("key", key);
-    device.insert("script_key", ConfigKeyForScript(meta));
-    device.insert("name", QString::fromStdString(meta.name));
-    device.insert("file", QFileInfo(source_path).fileName());
-    device.insert("source_path", source_path);
+    QJsonObject device = BaseDeviceRecord(meta, key);
     device.insert("vid", meta.vid.has_value() ? FormatHex16(*meta.vid) : FormatHex16(hid.vid));
     device.insert("pids", meta.pids.empty() ? FormatHex16(hid.pid) : FormatPidList(meta.pids));
-    device.insert("device_type", QString::fromStdString(meta.device_type));
-    device.insert("publisher", QString::fromStdString(meta.publisher));
     device.insert("serial", QString::fromStdString(hid.serial));
     device.insert("location", QString::fromStdString(hid.path));
-    device.insert("parameters", parameters);
     return device;
 }
 
 QJsonObject DeviceRecordForController(const ScriptMeta& meta, const SerialInfo& serial, const QString& key)
 {
-    const QString source_path = QString::fromStdString(meta.source_path);
-
-    QJsonArray parameters;
-    for(const QJsonObject& parameter : meta.control_parameters)
-    {
-        parameters.append(parameter);
-    }
-
-    QJsonObject device;
-    device.insert("key", key);
-    device.insert("script_key", ConfigKeyForScript(meta));
-    device.insert("name", QString::fromStdString(meta.name));
-    device.insert("file", QFileInfo(source_path).fileName());
-    device.insert("source_path", source_path);
+    QJsonObject device = BaseDeviceRecord(meta, key);
     device.insert("vid", meta.vid.has_value() ? FormatHex16(*meta.vid) : (serial.has_vid ? FormatHex16(serial.vid) : QString()));
     device.insert("pids", meta.pids.empty() ? (serial.has_pid ? FormatHex16(serial.pid) : QString()) : FormatPidList(meta.pids));
-    device.insert("device_type", QString::fromStdString(meta.device_type));
     device.insert("transport_type", QString::fromStdString(meta.transport_type));
-    device.insert("publisher", QString::fromStdString(meta.publisher));
     device.insert("serial", QString::fromStdString(serial.serial_number));
     device.insert("location", QString::fromStdString(!serial.port_name.empty() ? serial.port_name : serial.system_location));
-    device.insert("parameters", parameters);
     return device;
-}
-
-QString CompactJsonArray(const QJsonArray& array)
-{
-    return QString::fromUtf8(QJsonDocument(array).toJson(QJsonDocument::Compact));
 }
 
 QStringList FormatScriptTable(const std::vector<ScriptMeta>& scripts)

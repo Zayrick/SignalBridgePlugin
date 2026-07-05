@@ -31,7 +31,6 @@ struct RuntimeModuleState
     JSValue module = JS_UNDEFINED;
     JSValue namespace_object = JS_UNDEFINED;
     JSModuleDef* module_def = nullptr;
-    bool evaluated = false;
 };
 
 QuickJsRuntime::QuickJsRuntime()
@@ -93,11 +92,6 @@ void QuickJsRuntime::SetCallbackState(std::unique_ptr<RuntimeCallbackState> stat
     RegisterRuntimeCallbacks(context_);
 }
 
-RuntimeCallbackState* QuickJsRuntime::CallbackState()
-{
-    return callback_state_.get();
-}
-
 void QuickJsRuntime::Eval(const std::string& source, const std::string& name)
 {
     JSValue result = JS_Eval(context_, source.c_str(), source.size(), name.c_str(), JS_EVAL_TYPE_GLOBAL);
@@ -124,7 +118,6 @@ void QuickJsRuntime::LoadModule(const std::string& lookup_path, const std::vecto
 
     ClearModuleState();
     module_loader_state_->SetCatalog(catalog);
-    module_loader_state_->BeginLoad();
 
     const ScriptSource* source = module_loader_state_->Find(lookup_path);
     if(source == nullptr)
@@ -150,7 +143,6 @@ void QuickJsRuntime::LoadModule(const std::string& lookup_path, const std::vecto
     auto* module = static_cast<JSModuleDef*>(JS_VALUE_GET_PTR(compiled));
     module_state_->module = compiled;
     module_state_->module_def = module;
-    module_state_->evaluated = false;
 }
 
 void QuickJsRuntime::EvaluateModule()
@@ -181,7 +173,6 @@ void QuickJsRuntime::EvaluateModule()
         module_state_->namespace_object = JS_UNDEFINED;
         throw std::runtime_error(error);
     }
-    module_state_->evaluated = true;
 }
 
 bool QuickJsRuntime::HasGlobal(const std::string& name) const
@@ -463,7 +454,6 @@ void QuickJsRuntime::ClearModuleState()
     module_state_->module = JS_UNDEFINED;
     module_state_->namespace_object = JS_UNDEFINED;
     module_state_->module_def = nullptr;
-    module_state_->evaluated = false;
 }
 
 void QuickJsRuntime::Reset()

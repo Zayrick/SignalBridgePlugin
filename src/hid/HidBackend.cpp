@@ -2,10 +2,11 @@
 
 #include <algorithm>
 #include <cctype>
-#include <cstdio>
 #include <stdexcept>
 
 #include <QString>
+
+#include "domain/PathUtils.h"
 
 namespace signalbridge
 {
@@ -25,14 +26,6 @@ std::string HidError(hid_device* device, const std::string& fallback)
 {
     const std::string message = WideToUtf8(hid_error(device));
     return message.empty() ? fallback : message;
-}
-
-std::string ToUpperAscii(std::string value)
-{
-    std::transform(value.begin(), value.end(), value.begin(), [](unsigned char ch) {
-        return static_cast<char>(std::toupper(ch));
-    });
-    return value;
 }
 
 std::optional<std::string> InstanceKey(const std::string& path)
@@ -281,7 +274,7 @@ std::string HidBackend::EndpointKey(const HidInfo& info)
 
 std::string HidBackend::NormalizeDevicePath(const std::string& path)
 {
-    const std::string upper = ToUpperAscii(path);
+    const std::string upper = UpperAscii(path);
     const std::size_t vid_pos = upper.find("VID_");
     if(vid_pos == std::string::npos)
     {
@@ -305,18 +298,10 @@ std::string HidBackend::NormalizeDevicePath(const std::string& path)
     const std::optional<std::string> instance = InstanceKey(path);
     if(instance.has_value())
     {
-        return vid_pid + "#" + ToUpperAscii(*instance);
+        return vid_pid + "#" + UpperAscii(*instance);
     }
 
     return vid_pid;
-}
-
-std::string HidBackend::MakeControllerPort(const HidInfo& info)
-{
-    const std::string id = !info.serial.empty() ? info.serial : info.path;
-    char buffer[32];
-    std::snprintf(buffer, sizeof(buffer), "srgb:%04x:%04x:", info.vid, info.pid);
-    return std::string(buffer) + id;
 }
 
 hid_device* HidBackend::DeviceLocked(Handle handle) const

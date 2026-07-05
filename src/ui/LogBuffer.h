@@ -19,7 +19,6 @@ class LogBuffer
 public:
     void Clear();
     LogAppendResult Append(const QString& line);
-    const QStringList& Lines() const;
     QString Text() const;
 
 private:

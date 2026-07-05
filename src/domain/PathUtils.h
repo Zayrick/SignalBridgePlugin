@@ -6,6 +6,7 @@
 namespace signalbridge
 {
 std::string LowerAscii(std::string value);
+std::string UpperAscii(std::string value);
 std::string NormalizeLookupPath(std::string path);
 std::string LookupDir(const std::string& path);
 std::string JoinLookupPath(const std::string& lhs, const std::string& rhs);

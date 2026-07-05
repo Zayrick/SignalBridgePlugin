@@ -10,7 +10,7 @@
 #include <QJsonObject>
 
 #include "domain/ControlParameters.h"
-#include "openrgb/DeviceTypeMapper.h"
+#include "domain/PathUtils.h"
 #include "openrgb/FrameBuilder.h"
 #include "runtime/SignalRgbRuntimeFactory.h"
 
@@ -27,6 +27,64 @@ std::string FirstWord(const std::string& value)
         return std::isspace(ch) != 0;
     });
     return first == value.end() ? std::string("SignalRGB") : std::string(first, last);
+}
+
+device_type ResolveOpenRgbDeviceType(const std::string& signalrgb_type)
+{
+    const std::string normalized = LowerAscii(signalrgb_type);
+    if(normalized == "keyboard")
+    {
+        return DEVICE_TYPE_KEYBOARD;
+    }
+    if(normalized == "mouse")
+    {
+        return DEVICE_TYPE_MOUSE;
+    }
+    if(normalized == "mousepad")
+    {
+        return DEVICE_TYPE_MOUSEMAT;
+    }
+    if(normalized == "headphones" || normalized == "headset")
+    {
+        return DEVICE_TYPE_HEADSET;
+    }
+    if(normalized == "microphone")
+    {
+        return DEVICE_TYPE_MICROPHONE;
+    }
+    if(normalized == "monitor")
+    {
+        return DEVICE_TYPE_MONITOR;
+    }
+    if(normalized == "gpu")
+    {
+        return DEVICE_TYPE_GPU;
+    }
+    if(normalized == "motherboard")
+    {
+        return DEVICE_TYPE_MOTHERBOARD;
+    }
+    if(normalized == "ram")
+    {
+        return DEVICE_TYPE_DRAM;
+    }
+    if(normalized == "cooler" || normalized == "aio" || normalized == "fan")
+    {
+        return DEVICE_TYPE_COOLER;
+    }
+    if(normalized == "ledstrip")
+    {
+        return DEVICE_TYPE_LEDSTRIP;
+    }
+    if(normalized == "speaker")
+    {
+        return DEVICE_TYPE_SPEAKER;
+    }
+    if(normalized == "accessory" || normalized == "chair")
+    {
+        return DEVICE_TYPE_ACCESSORY;
+    }
+    return DEVICE_TYPE_UNKNOWN;
 }
 }
 
@@ -224,11 +282,6 @@ void SignalBridgeController::DeviceUpdateMode()
 {
 }
 
-const std::string& SignalBridgeController::SourcePath() const
-{
-    return meta_.source_path;
-}
-
 const std::string& SignalBridgeController::ConfigKey() const
 {
     return config_key_;
@@ -237,27 +290,6 @@ const std::string& SignalBridgeController::ConfigKey() const
 const ScriptMeta& SignalBridgeController::ScriptMetadata() const
 {
     return meta_;
-}
-
-void SignalBridgeController::SetConfiguration(QJsonObject configuration)
-{
-    std::lock_guard<std::mutex> lock(mutex_);
-    pending_configuration_changes_.clear();
-    for(const QJsonObject& parameter : meta_.control_parameters)
-    {
-        const QString property = parameter.value("property").toString();
-        if(property.isEmpty())
-        {
-            continue;
-        }
-
-        if(NormalizeParameterValue(parameter, configuration_.value(property)) !=
-           NormalizeParameterValue(parameter, configuration.value(property)))
-        {
-            pending_configuration_changes_.push_back(property);
-        }
-    }
-    configuration_ = std::move(configuration);
 }
 
 void SignalBridgeController::SetConfigurationValue(const QString& property, const QJsonValue& value)

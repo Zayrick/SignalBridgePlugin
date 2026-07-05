@@ -43,11 +43,6 @@ LogAppendResult LogBuffer::Append(const QString& line)
     return result;
 }
 
-const QStringList& LogBuffer::Lines() const
-{
-    return lines_;
-}
-
 QString LogBuffer::Text() const
 {
     return lines_.join('\n');

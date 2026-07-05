@@ -120,7 +120,7 @@ public:
         const int generation = discovery_generation_.fetch_add(1) + 1;
         discovery_running_.store(true);
         widget_->ClearLogOutput();
-        plugin_->EmitDiscoveryStatus(
+        emit plugin_->DiscoveryStatusChanged(
             generation,
             QStringLiteral("Scanning SignalRGB scripts..."),
             QString(),
@@ -207,10 +207,10 @@ private:
                 const QString& devices,
                 bool running,
                 int progress) {
-                plugin_->EmitDiscoveryStatus(callback_generation, status, details, scripts, devices, running, progress);
+                emit plugin_->DiscoveryStatusChanged(callback_generation, status, details, scripts, devices, running, progress);
             };
         callbacks.log_line = [this](const QString& line) {
-            plugin_->EmitScriptLog(line);
+            emit plugin_->ScriptLogReceived(line);
         };
 
         discovery_service_.Discover(generation, manager, registry_, config_store_, callbacks);
@@ -298,7 +298,7 @@ private:
         StopDiscoveryThread();
         registry_.AbandonOpenRgbOwnedControllers();
 
-        plugin_->EmitDiscoveryStatus(
+        emit plugin_->DiscoveryStatusChanged(
             discovery_generation_.load(),
             QStringLiteral("OpenRGB device scan in progress"),
             QString(),
@@ -374,7 +374,7 @@ OpenRGBPluginInfo SignalBridgePlugin::GetPluginInfo()
     info.Name = "Signal Bridge Plugin";
     info.Description = "Brings support for SignalRGB JavaScript device plugins to OpenRGB.";
     info.Version = SIGNALBRIDGEPLUGIN_VERSION;
-    info.Commit = SIGNALBRIDGEPLUGIN_COMMIT;
+    info.Commit = "";
     info.URL = "";
     info.Location = OPENRGB_PLUGIN_LOCATION_TOP;
     info.Label = "SignalBridge";
@@ -424,19 +424,3 @@ void SignalBridgePlugin::AppendLogLine(const QString& line)
     core_->AppendLogLine(line);
 }
 
-void SignalBridgePlugin::EmitDiscoveryStatus(
-    int generation,
-    const QString& status,
-    const QString& details,
-    const QStringList& scripts,
-    const QString& devices,
-    bool running,
-    int progress)
-{
-    emit DiscoveryStatusChanged(generation, status, details, scripts, devices, running, progress);
-}
-
-void SignalBridgePlugin::EmitScriptLog(const QString& line)
-{
-    emit ScriptLogReceived(line);
-}

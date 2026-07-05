@@ -9,6 +9,7 @@
 #include "runtime/QuickJsValue.h"
 #include "runtime/RuntimeBindingUtils.h"
 #include "runtime/signalrgb/SignalRgbModuleRegistry.h"
+#include "runtime/signalrgb/SignalRgbModuleUtils.h"
 
 namespace signalbridge
 {
@@ -116,20 +117,7 @@ JSValue CreateSystemInfoObject(JSContext* context)
 
 int SystemInfoModuleInit(JSContext* context, JSModuleDef* module)
 {
-    JSValue object = GetOrCreateGlobalProperty(context, "systeminfo", CreateSystemInfoObject);
-    JSValue named = JS_DupValue(context, object);
-    if(JS_SetModuleExport(context, module, "systeminfo", named) < 0)
-    {
-        JS_FreeValue(context, named);
-        JS_FreeValue(context, object);
-        return -1;
-    }
-    if(JS_SetModuleExport(context, module, "default", object) < 0)
-    {
-        JS_FreeValue(context, object);
-        return -1;
-    }
-    return 0;
+    return ExportObjectModule(context, module, "systeminfo", "systeminfo", CreateSystemInfoObject);
 }
 }
 
@@ -201,17 +189,7 @@ void RegisterSystemInfoGlobal(JSContext* context)
 
 JSModuleDef* LoadSystemInfoModule(JSContext* context, const char* module_name)
 {
-    JSModuleDef* module = JS_NewCModule(context, module_name, SystemInfoModuleInit);
-    if(module == nullptr)
-    {
-        return nullptr;
-    }
-    if(JS_AddModuleExport(context, module, "systeminfo") < 0 ||
-       JS_AddModuleExport(context, module, "default") < 0)
-    {
-        return nullptr;
-    }
-    return module;
+    return LoadObjectModule(context, module_name, SystemInfoModuleInit, "systeminfo");
 }
 
 [[maybe_unused]] const bool kRegistered = RegisterSignalRgbModule({

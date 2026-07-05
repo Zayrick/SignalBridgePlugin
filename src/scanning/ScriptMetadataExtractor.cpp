@@ -107,10 +107,10 @@ unsigned int JsonUInt(const QJsonValue& value, unsigned int fallback)
 }
 }
 
-std::optional<ScriptMeta> ScriptMetadataExtractor::Extract(
+std::optional<ScriptMeta> ExtractScriptMetadata(
     const ScriptSource& script,
     const std::vector<ScriptSource>& catalog,
-    const ScriptLogCallback& log_callback) const
+    const ScriptLogCallback& log_callback)
 {
     QuickJsRuntime runtime = SignalRgbRuntimeFactory::CreateScan(log_callback, script.lookup_path);
     runtime.LoadModule(script.lookup_path, catalog);
@@ -151,7 +151,6 @@ std::optional<ScriptMeta> ScriptMetadataExtractor::Extract(
     }
     meta.device_type = runtime.CallModuleExportJson("DeviceType").toString().toStdString();
     meta.publisher = runtime.CallModuleExportJson("Publisher").toString().toStdString();
-    meta.image_url = runtime.CallModuleExportJson("ImageUrl").toString().toStdString();
     meta.led_names = ExtractStringArray(runtime.CallModuleExportJson("LedNames"));
     meta.led_positions = ExtractPositions(runtime.CallModuleExportJson("LedPositions"));
     meta.has_validate = runtime.HasModuleExport("Validate");

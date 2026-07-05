@@ -19,13 +19,11 @@ struct ModuleLoaderState
     std::set<std::string> loaded_keys;
 
     void SetCatalog(const std::vector<ScriptSource>& sources);
-    void BeginLoad();
     const ScriptSource* Find(const std::string& lookup_path) const;
     std::string Resolve(const std::string& base_name, const std::string& module_name) const;
     void RecordLoaded(const ScriptSource& source);
 };
 
-JSModuleDef* CompileModule(JSContext* context, const std::string& name, const std::string& source);
 char* NormalizeModuleName(JSContext* context, const char* module_base_name, const char* module_name, void* opaque);
 JSModuleDef* LoadModule(JSContext* context, const char* module_name, void* opaque);
 }

@@ -49,10 +49,8 @@ public:
     void SetCustomMode() override;
     void DeviceUpdateMode() override;
 
-    const std::string& SourcePath() const;
     const std::string& ConfigKey() const;
     const ScriptMeta& ScriptMetadata() const;
-    void SetConfiguration(QJsonObject configuration);
     void SetConfigurationValue(const QString& property, const QJsonValue& value);
 
 private:

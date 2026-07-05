@@ -1,6 +1,5 @@
 #include "openrgb/EndpointSession.h"
 
-#include <set>
 #include <utility>
 
 namespace signalbridge
@@ -64,16 +63,11 @@ void EndpointSession::Open()
 
 void EndpointSession::Close()
 {
-    std::set<HidBackend::Handle> handles;
     for(const auto& item : endpoint_handles_)
-    {
-        handles.insert(item.second);
-    }
-    for(HidBackend::Handle handle : handles)
     {
         try
         {
-            backend_->Close(handle);
+            backend_->Close(item.second);
         }
         catch(...)
         {

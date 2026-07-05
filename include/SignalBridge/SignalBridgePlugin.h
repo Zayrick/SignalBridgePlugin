@@ -60,16 +60,6 @@ private slots:
 private:
     friend class signalbridge::SignalBridgePluginCore;
 
-    void EmitDiscoveryStatus(
-        int generation,
-        const QString& status,
-        const QString& details,
-        const QStringList& scripts,
-        const QString& devices,
-        bool running,
-        int progress);
-    void EmitScriptLog(const QString& line);
-
     std::unique_ptr<signalbridge::SignalBridgePluginCore> core_;
 };
 

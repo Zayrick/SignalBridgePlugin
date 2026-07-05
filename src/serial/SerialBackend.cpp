@@ -7,6 +7,7 @@
 
 #include "CSerialPort/SerialPort.h"
 #include "CSerialPort/SerialPortInfo.h"
+#include "domain/PathUtils.h"
 
 namespace signalbridge
 {
@@ -43,14 +44,6 @@ std::string PortNameForOpen(const SerialInfo& info, const SerialOptions& options
 bool IsHexDigit(char value)
 {
     return std::isxdigit(static_cast<unsigned char>(value)) != 0;
-}
-
-std::string ToUpperAscii(std::string value)
-{
-    std::transform(value.begin(), value.end(), value.begin(), [](unsigned char ch) {
-        return static_cast<char>(std::toupper(ch));
-    });
-    return value;
 }
 
 bool ParseHex16(const std::string& value, std::uint16_t& output)
@@ -93,7 +86,7 @@ bool ParseHex16After(const std::string& value, const std::string& marker, std::u
 
 bool ParseVidPid(const std::string& hardware_id, std::uint16_t& vid, std::uint16_t& pid)
 {
-    const std::string normalized = ToUpperAscii(hardware_id);
+    const std::string normalized = UpperAscii(hardware_id);
     const std::size_t colon = normalized.find(':');
     if(colon != std::string::npos &&
        ParseHex16(normalized.substr(0, colon), vid) &&

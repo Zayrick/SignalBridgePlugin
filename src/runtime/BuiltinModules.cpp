@@ -10,12 +10,6 @@ namespace signalbridge
 {
 namespace
 {
-bool StartsWith(const std::string& value, const char* prefix)
-{
-    const std::string expected(prefix);
-    return value.size() >= expected.size() && value.substr(0, expected.size()) == expected;
-}
-
 JSModuleDef* ThrowUnknownBuiltin(JSContext* context, const std::string& specifier)
 {
     JS_ThrowReferenceError(context, "unknown SignalRGB builtin module '%s'", specifier.c_str());
@@ -35,7 +29,7 @@ std::string NormalizeBuiltinSpecifier(std::string specifier)
 bool IsBuiltinModule(const std::string& specifier)
 {
     const std::string normalized = NormalizeBuiltinSpecifier(specifier);
-    return StartsWith(normalized, "@SignalRGB/");
+    return normalized.rfind("@SignalRGB/", 0) == 0;
 }
 
 JSModuleDef* LoadBuiltinModule(JSContext* context, const std::string& specifier)

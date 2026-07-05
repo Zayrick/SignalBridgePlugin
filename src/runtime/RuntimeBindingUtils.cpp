@@ -32,12 +32,15 @@ void SetGlobalProperty(JSContext* context, const char* name, JSValue value)
     JS_FreeValue(context, global);
 }
 
+namespace
+{
 JSValue GetGlobalProperty(JSContext* context, const char* name)
 {
     JSValue global = JS_GetGlobalObject(context);
     JSValue value = JS_GetPropertyStr(context, global, name);
     JS_FreeValue(context, global);
     return value;
+}
 }
 
 JSValue GetOrCreateGlobalProperty(JSContext* context, const char* name, JSValue (*factory)(JSContext*))
@@ -89,8 +92,4 @@ JSValue HundredJs(JSContext* context, JSValueConst, int, JSValueConst*)
     return JS_NewInt32(context, 100);
 }
 
-JSValue FalseJs(JSContext* context, JSValueConst, int, JSValueConst*)
-{
-    return JS_NewBool(context, false);
-}
 }

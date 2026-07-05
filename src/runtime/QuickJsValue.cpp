@@ -8,6 +8,8 @@
 
 namespace signalbridge
 {
+namespace
+{
 std::string JsonValueToString(const QJsonValue& value)
 {
     const QByteArray wrapped = QJsonDocument(QJsonArray{ value }).toJson(QJsonDocument::Compact);
@@ -33,16 +35,12 @@ QJsonValue JsonValueFromString(const char* value)
     }
     return QJsonValue(QString::fromUtf8(value));
 }
+}
 
 JSValue JsonToJsValue(JSContext* context, const QJsonValue& value, const std::string& name)
 {
     const std::string json = JsonValueToString(value);
-    JSValue parsed = JS_ParseJSON(context, json.c_str(), json.size(), name.c_str());
-    if(JS_IsException(parsed))
-    {
-        return parsed;
-    }
-    return parsed;
+    return JS_ParseJSON(context, json.c_str(), json.size(), name.c_str());
 }
 
 QJsonValue JsValueToJson(JSContext* context, JSValueConst value)

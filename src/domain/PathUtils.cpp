@@ -14,6 +14,14 @@ std::string LowerAscii(std::string value)
     return value;
 }
 
+std::string UpperAscii(std::string value)
+{
+    std::transform(value.begin(), value.end(), value.begin(), [](unsigned char ch) {
+        return static_cast<char>(std::toupper(ch));
+    });
+    return value;
+}
+
 std::string NormalizeLookupPath(std::string path)
 {
     std::replace(path.begin(), path.end(), '\\', '/');

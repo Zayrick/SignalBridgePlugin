@@ -189,16 +189,6 @@ QJsonArray EndpointsToJson(const std::vector<EndpointDescriptor>& endpoints)
     return array;
 }
 
-QJsonArray BytesToJsonArray(const std::vector<std::uint8_t>& bytes)
-{
-    QJsonArray array;
-    for(std::uint8_t byte : bytes)
-    {
-        array.append(static_cast<int>(byte));
-    }
-    return array;
-}
-
 QJsonArray StringArrayToJson(const std::vector<std::string>& values)
 {
     QJsonArray array;

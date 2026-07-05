@@ -17,12 +17,6 @@ void ModuleLoaderState::SetCatalog(const std::vector<ScriptSource>& sources)
     loaded_keys.clear();
 }
 
-void ModuleLoaderState::BeginLoad()
-{
-    loaded_modules.clear();
-    loaded_keys.clear();
-}
-
 const ScriptSource* ModuleLoaderState::Find(const std::string& lookup_path) const
 {
     const std::string normalized = NormalizeLookupPath(lookup_path);
@@ -81,6 +75,8 @@ void ModuleLoaderState::RecordLoaded(const ScriptSource& source)
     }
 }
 
+namespace
+{
 JSModuleDef* CompileModule(JSContext* context, const std::string& name, const std::string& source)
 {
     JSValue compiled = JS_Eval(
@@ -97,6 +93,7 @@ JSModuleDef* CompileModule(JSContext* context, const std::string& name, const st
     auto* module = static_cast<JSModuleDef*>(JS_VALUE_GET_PTR(compiled));
     JS_FreeValue(context, compiled);
     return module;
+}
 }
 
 char* NormalizeModuleName(JSContext* context, const char* module_base_name, const char* module_name, void* opaque)

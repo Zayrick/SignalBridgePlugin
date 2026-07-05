@@ -24,10 +24,9 @@ public:
     const std::map<std::string, HidBackend::Handle>& Handles() const;
     const std::vector<EndpointDescriptor>& Endpoints() const;
 
-    void Close();
-
 private:
     void Open();
+    void Close();
 
     std::shared_ptr<HidBackend> backend_;
     HidInfo primary_hid_;

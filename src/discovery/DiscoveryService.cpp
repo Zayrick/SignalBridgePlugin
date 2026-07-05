@@ -8,6 +8,7 @@
 #include <string>
 
 #include <QJsonArray>
+#include <QJsonDocument>
 #include <QJsonObject>
 
 #include "domain/DeviceRecords.h"
@@ -147,9 +148,9 @@ void DiscoveryService::Discover(
                 }
                 EmitLog(callbacks, FormatScriptLogLine("Scan", source, message));
             };
-        const ScanReport report = ScriptScanner().ScanDirectory(
+        const ScanReport report = ScanDirectory(
             script_dir,
-            [generation, &callbacks, &last_scan_progress](std::size_t completed, std::size_t total, const std::string&) {
+            [generation, &callbacks, &last_scan_progress](std::size_t completed, std::size_t total) {
                 if(IsStale(generation, callbacks))
                 {
                     return;
@@ -399,7 +400,7 @@ void DiscoveryService::Discover(
                    QString::fromStdString(status),
                    detail_lines.join('\n'),
                    discovered_scripts,
-                   CompactJsonArray(registered_devices),
+                   QString::fromUtf8(QJsonDocument(registered_devices).toJson(QJsonDocument::Compact)),
                    false,
                    100);
     }

@@ -31,7 +31,6 @@ struct ScriptMeta
     std::string transport_type;
     std::string device_type;
     std::string publisher;
-    std::string image_url;
     std::vector<std::string> led_names;
     std::vector<std::pair<int, int>> led_positions;
     std::vector<QJsonObject> control_parameters;

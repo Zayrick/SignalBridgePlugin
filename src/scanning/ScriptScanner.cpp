@@ -14,10 +14,10 @@
 
 namespace signalbridge
 {
-ScanReport ScriptScanner::ScanDirectory(
+ScanReport ScanDirectory(
     const std::string& script_directory,
     ScanProgressCallback progress_callback,
-    ScriptLogCallback log_callback) const
+    ScriptLogCallback log_callback)
 {
     ScanReport report;
     const QDir root(QString::fromStdString(script_directory));
@@ -48,13 +48,12 @@ ScanReport ScriptScanner::ScanDirectory(
         });
     }
 
-    ScriptMetadataExtractor extractor;
     std::size_t completed = 0;
     for(const ScriptSource& source : sources)
     {
         try
         {
-            std::optional<ScriptMeta> meta = extractor.Extract(source, sources, log_callback);
+            std::optional<ScriptMeta> meta = ExtractScriptMetadata(source, sources, log_callback);
             if(meta.has_value())
             {
                 report.scripts.push_back(std::move(*meta));
@@ -68,7 +67,7 @@ ScanReport ScriptScanner::ScanDirectory(
         completed++;
         if(progress_callback)
         {
-            progress_callback(completed, sources.size(), source.source_path);
+            progress_callback(completed, sources.size());
         }
     }
 

@@ -30,7 +30,6 @@ public:
 
     Handle OpenPath(const std::string& path);
     void Close(Handle handle);
-    void CloseAll();
 
     std::size_t Write(Handle handle, const std::vector<std::uint8_t>& data);
     std::vector<std::uint8_t> Read(Handle handle, std::size_t length, int timeout_ms);
@@ -42,9 +41,9 @@ public:
 
     static std::string EndpointKey(const HidInfo& info);
     static std::string NormalizeDevicePath(const std::string& path);
-    static std::string MakeControllerPort(const HidInfo& info);
 
 private:
+    void CloseAll();
     hid_device* DeviceLocked(Handle handle) const;
     Handle StoreDeviceLocked(hid_device* device);
 

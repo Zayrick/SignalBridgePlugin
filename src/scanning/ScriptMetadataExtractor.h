@@ -8,14 +8,10 @@
 
 namespace signalbridge
 {
-class ScriptMetadataExtractor
-{
-public:
-    std::optional<ScriptMeta> Extract(
-        const ScriptSource& script,
-        const std::vector<ScriptSource>& catalog,
-        const ScriptLogCallback& log_callback) const;
-};
+std::optional<ScriptMeta> ExtractScriptMetadata(
+    const ScriptSource& script,
+    const std::vector<ScriptSource>& catalog,
+    const ScriptLogCallback& log_callback);
 }
 
 #endif // SIGNALBRIDGE_SCRIPT_METADATA_EXTRACTOR_H
