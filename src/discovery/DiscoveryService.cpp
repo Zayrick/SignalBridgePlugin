@@ -76,7 +76,7 @@ bool ValidateScriptEndpoint(
     try
     {
         ScriptLogCallback log_callback =
-            [generation, &callbacks](const std::string& source, const std::string& message) {
+            [generation, callbacks](const std::string& source, const std::string& message) {
                 if(IsStale(generation, callbacks))
                 {
                     return;
@@ -141,7 +141,7 @@ void DiscoveryService::Discover(
         const std::string script_dir = script_path.generic_u8string();
         int last_scan_progress = -1;
         ScriptLogCallback scan_log_callback =
-            [generation, &callbacks](const std::string& source, const std::string& message) {
+            [generation, callbacks](const std::string& source, const std::string& message) {
                 if(IsStale(generation, callbacks))
                 {
                     return;
@@ -150,7 +150,7 @@ void DiscoveryService::Discover(
             };
         const ScanReport report = ScanDirectory(
             script_dir,
-            [generation, &callbacks, &last_scan_progress](std::size_t completed, std::size_t total) {
+            [generation, callbacks, &last_scan_progress](std::size_t completed, std::size_t total) {
                 if(IsStale(generation, callbacks))
                 {
                     return;
@@ -220,7 +220,7 @@ void DiscoveryService::Discover(
 
         int last_register_progress = 80;
         ScriptLogCallback runtime_log_callback =
-            [generation, &callbacks](const std::string& source, const std::string& message) {
+            [generation, callbacks](const std::string& source, const std::string& message) {
                 if(IsStale(generation, callbacks))
                 {
                     return;
