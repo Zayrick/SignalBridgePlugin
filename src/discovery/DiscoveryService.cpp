@@ -297,7 +297,9 @@ void DiscoveryService::Discover(
                                     throw std::runtime_error("failed to register controller");
                                 }
                                 open_groups.insert(group);
-                                registered_devices.append(DeviceRecordForController(raw_controller->ScriptMetadata(), hid, config_key));
+                                QJsonObject device_record = DeviceRecordForController(raw_controller->ScriptMetadata(), hid, config_key);
+                                device_record.insert("name", QString::fromStdString(raw_controller->name));
+                                registered_devices.append(device_record);
                                 matched++;
                                 detail_lines << QString("Registered: %1 [%2:%3] HID")
                                                     .arg(QString::fromStdString(meta.name))
@@ -352,7 +354,9 @@ void DiscoveryService::Discover(
                                 throw std::runtime_error("failed to register controller");
                             }
                             open_serial_ports.insert(port);
-                            registered_devices.append(DeviceRecordForController(raw_controller->ScriptMetadata(), serial, config_key));
+                            QJsonObject device_record = DeviceRecordForController(raw_controller->ScriptMetadata(), serial, config_key);
+                            device_record.insert("name", QString::fromStdString(raw_controller->name));
+                            registered_devices.append(device_record);
                             matched++;
                             detail_lines << QString("Registered: %1 [%2:%3] Serial %4")
                                                 .arg(QString::fromStdString(meta.name))
