@@ -75,10 +75,11 @@ jobs:
         if: matrix.os == 'windows'
         shell: pwsh
         run: |
-          cmake -S . -B build -A "${{ matrix.cmake_arch }}" -DCMAKE_CONFIGURATION_TYPES=${env:BUILD_TYPE} -DCMAKE_PREFIX_PATH="${env:QT_ROOT_DIR}" -DSIGNALBRIDGE_BUILD_TESTS=OFF
-          cmake --build build --config "${env:BUILD_TYPE}" --target SignalBridgePlugin --parallel
+          $ErrorActionPreference = 'Stop'
+          & cmake -S . -B build -A "${{ matrix.cmake_arch }}" "-DCMAKE_CONFIGURATION_TYPES=$env:BUILD_TYPE" "-DCMAKE_PREFIX_PATH=$env:QT_ROOT_DIR" -DSIGNALBRIDGE_BUILD_TESTS=OFF
+          & cmake --build build --config "$env:BUILD_TYPE" --target SignalBridgePlugin --parallel
           New-Item -ItemType Directory -Force package, dist | Out-Null
-          $plugin = Get-ChildItem build -Recurse -Filter SignalBridgePlugin.dll | Where-Object { $_.FullName -match "\\${env:BUILD_TYPE}\\" } | Select-Object -First 1
+          $plugin = Get-ChildItem build -Recurse -Filter SignalBridgePlugin.dll | Where-Object { $_.FullName -match "\\$env:BUILD_TYPE\\" } | Select-Object -First 1
           if (-not $plugin) { throw "SignalBridgePlugin.dll not found" }
           Copy-Item $plugin.FullName package\
           Copy-Item LICENSE package\
@@ -102,7 +103,7 @@ jobs:
             bash -lc '
               set -euo pipefail
               apt-get update
-              apt-get install -y --no-install-recommends build-essential ca-certificates cmake ninja-build pkg-config qtbase5-dev libgl1-mesa-dev libudev-dev
+              apt-get install -y --no-install-recommends build-essential ca-certificates cmake ninja-build pkg-config qtbase5-dev libgl1-mesa-dev libudev-dev libusb-1.0-0-dev
               cmake -S . -B "build/${{ matrix.asset }}" -G Ninja -DCMAKE_BUILD_TYPE=Release -DSIGNALBRIDGE_BUILD_TESTS=OFF
               cmake --build "build/${{ matrix.asset }}" --target SignalBridgePlugin --parallel
               mkdir -p package dist
