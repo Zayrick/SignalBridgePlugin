@@ -322,6 +322,7 @@ bool TestNativeDeviceRuntime()
     const std::string source = R"JS(
 export function Initialize() {
     globalThis.hidInfo = device.getHidInfo();
+    globalThis.deviceInfo = device.getDeviceInfo();
     globalThis.endpoints = device.getHidEndpoints();
     device.setName("Native Device");
     device.setSize([2, 1]);
@@ -333,6 +334,7 @@ export function Render() {
 export function Snapshot() {
     return {
         hidInfo: globalThis.hidInfo,
+        deviceInfo: globalThis.deviceInfo,
         endpoints: globalThis.endpoints,
         firstColor: globalThis.firstColor,
     };
@@ -348,6 +350,7 @@ export function Snapshot() {
     HidInfo hid;
     hid.vid = 0x1234;
     hid.pid = 0x5678;
+    hid.product = "AK820";
 
     std::vector<EndpointDescriptor> endpoints;
     endpoints.push_back(EndpointDescriptor{ 2, 1, 0xFF00 });
@@ -374,6 +377,7 @@ export function Snapshot() {
            Check(topology.value("main").toObject().value("led_count").toInt() == 2, "native device runtime exports script-set LEDs") &&
            Check(snapshot.value("hidInfo").toObject().value("vid").toInt() == 0x1234, "native device runtime exposes primary VID") &&
            Check(snapshot.value("hidInfo").toObject().value("pid").toInt() == 0x5678, "native device runtime exposes primary PID") &&
+           Check(snapshot.value("deviceInfo").toObject().value("product").toString() == "AK820", "native device runtime exposes HID product name") &&
            Check(snapshot.value("endpoints").toArray().size() == 1, "native device runtime exposes HID endpoints") &&
            Check(color.size() == 3 && color.at(0).toInt() == 7 && color.at(1).toInt() == 8 && color.at(2).toInt() == 9,
                  "native device runtime reads OpenRGB frame through device.color");

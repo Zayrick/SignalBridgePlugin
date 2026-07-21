@@ -688,6 +688,7 @@ JSValue DeviceGetDeviceInfoJs(JSContext* context, JSValueConst, int, JSValueCons
         info.insert("vid", static_cast<int>(state->device.vid));
         info.insert("pid", static_cast<int>(state->device.pid));
         info.insert("name", QString::fromStdString(state->device.name));
+        info.insert("product", QString::fromStdString(state->primary_hid.product));
     }
     return JsonToJsValue(context, info, "<device-info>");
 }
