@@ -1,4 +1,4 @@
-name: Qt5 release
+name: Qt5 and Qt6 release
 
 on:
   push:
@@ -7,6 +7,10 @@ on:
 
 permissions:
   contents: read
+
+concurrency:
+  group: signalbridge-main-latest
+  cancel-in-progress: false
 
 env:
   BUILD_TYPE: Release
@@ -23,37 +27,96 @@ jobs:
           - os: windows
             runner: windows-2022
             asset: SignalBridgePlugin-qt5-windows-x64
+            install_qt_action: true
+            qt_version: '5.15.2'
+            qt_host: windows
             qt_arch: win64_msvc2019_64
             cmake_arch: x64
           - os: windows
             runner: windows-2022
             asset: SignalBridgePlugin-qt5-windows-x86
+            install_qt_action: true
+            qt_version: '5.15.2'
+            qt_host: windows
             qt_arch: win32_msvc2019
             cmake_arch: Win32
+          - os: windows
+            runner: windows-2022
+            asset: SignalBridgePlugin-qt6-windows-x64
+            install_qt_action: true
+            qt_version: '6.11.1'
+            qt_host: windows
+            qt_arch: win64_msvc2022_64
+            cmake_arch: x64
           - os: linux
             runner: ubuntu-24.04
             asset: SignalBridgePlugin-qt5-linux-amd64
             platform: linux/amd64
+            qt_package: qtbase5-dev
           - os: linux
             runner: ubuntu-24.04
             asset: SignalBridgePlugin-qt5-linux-i386
             platform: linux/386
+            qt_package: qtbase5-dev
           - os: linux
             runner: ubuntu-24.04
             asset: SignalBridgePlugin-qt5-linux-arm64
             platform: linux/arm64
+            qt_package: qtbase5-dev
           - os: linux
             runner: ubuntu-24.04
             asset: SignalBridgePlugin-qt5-linux-armhf
             platform: linux/arm/v7
+            qt_package: qtbase5-dev
+          - os: linux
+            runner: ubuntu-24.04
+            asset: SignalBridgePlugin-qt6-linux-amd64
+            platform: linux/amd64
+            qt_package: qt6-base-dev
+          - os: linux
+            runner: ubuntu-24.04
+            asset: SignalBridgePlugin-qt6-linux-i386
+            platform: linux/386
+            qt_package: qt6-base-dev
+          - os: linux
+            runner: ubuntu-24.04
+            asset: SignalBridgePlugin-qt6-linux-arm64
+            platform: linux/arm64
+            qt_package: qt6-base-dev
+          - os: linux
+            runner: ubuntu-24.04
+            asset: SignalBridgePlugin-qt6-linux-armhf
+            platform: linux/arm/v7
+            qt_package: qt6-base-dev
           - os: macos
             runner: macos-15
             asset: SignalBridgePlugin-qt5-macos-apple
             cmake_arch: arm64
+            brew_qt: qt@5
           - os: macos
             runner: macos-15-intel
             asset: SignalBridgePlugin-qt5-macos-intel
             cmake_arch: x86_64
+            install_qt_action: true
+            qt_version: '5.15.2'
+            qt_host: mac
+            qt_arch: clang_64
+          - os: macos
+            runner: macos-15
+            asset: SignalBridgePlugin-qt6-macos-apple
+            cmake_arch: arm64
+            install_qt_action: true
+            qt_version: '6.11.1'
+            qt_host: mac
+            qt_arch: clang_64
+          - os: macos
+            runner: macos-15-intel
+            asset: SignalBridgePlugin-qt6-macos-intel
+            cmake_arch: x86_64
+            install_qt_action: true
+            qt_version: '6.11.1'
+            qt_host: mac
+            qt_arch: clang_64
 
     steps:
       - name: Checkout
@@ -62,11 +125,11 @@ jobs:
           submodules: recursive
 
       - name: Install Qt
-        if: matrix.os == 'windows'
+        if: matrix.install_qt_action == true
         uses: jurplel/install-qt-action@v4
         with:
-          version: '5.15.2'
-          host: windows
+          version: ${{ matrix.qt_version }}
+          host: ${{ matrix.qt_host }}
           target: desktop
           arch: ${{ matrix.qt_arch }}
           cache: true
@@ -103,7 +166,7 @@ jobs:
             bash -lc '
               set -euo pipefail
               apt-get update
-              apt-get install -y --no-install-recommends build-essential ca-certificates cmake ninja-build pkg-config qtbase5-dev libgl1-mesa-dev libudev-dev libusb-1.0-0-dev
+              apt-get install -y --no-install-recommends build-essential ca-certificates cmake ninja-build pkg-config ${{ matrix.qt_package }} libgl1-mesa-dev libudev-dev libusb-1.0-0-dev
               cmake -S . -B "build/${{ matrix.asset }}" -G Ninja -DCMAKE_BUILD_TYPE=Release -DSIGNALBRIDGE_BUILD_TESTS=OFF
               cmake --build "build/${{ matrix.asset }}" --target SignalBridgePlugin --parallel
               mkdir -p package dist
@@ -120,24 +183,14 @@ jobs:
         run: brew install ninja
 
       - name: Install Qt
-        if: matrix.os == 'macos' && matrix.cmake_arch == 'x86_64'
-        uses: jurplel/install-qt-action@v4
-        with:
-          version: '5.15.2'
-          host: mac
-          target: desktop
-          arch: clang_64
-          cache: true
-
-      - name: Install Qt
-        if: matrix.os == 'macos' && matrix.cmake_arch == 'arm64'
-        run: brew install qt@5
+        if: matrix.brew_qt != ''
+        run: brew install ${{ matrix.brew_qt }}
 
       - name: Build
         if: matrix.os == 'macos'
         run: |
-          if [ "${{ matrix.cmake_arch }}" = "arm64" ]; then
-            qt_prefix="$(brew --prefix qt@5)"
+          if [ -n "${{ matrix.brew_qt }}" ]; then
+            qt_prefix="$(brew --prefix "${{ matrix.brew_qt }}")"
           else
             qt_prefix="${QT_ROOT_DIR}"
           fi
@@ -174,7 +227,7 @@ jobs:
         uses: actions/download-artifact@v8
         with:
           path: release-assets
-          pattern: SignalBridgePlugin-qt5-*
+          pattern: SignalBridgePlugin-qt*-*
           merge-multiple: true
 
       - name: Publish release
@@ -188,11 +241,11 @@ jobs:
           git tag -f "$TAG" "$GITHUB_SHA"
           git push -f origin "refs/tags/$TAG"
 
-          notes="Automated Qt5 build from main at ${GITHUB_SHA}."
+          notes="Automated Qt5 and Qt6 builds from main at ${GITHUB_SHA}."
           if gh release view "$TAG" >/dev/null 2>&1; then
-            gh release edit "$TAG" --title "Latest main Qt5 build" --notes "$notes" --prerelease
+            gh release edit "$TAG" --title "Latest main Qt5 and Qt6 builds" --notes "$notes" --prerelease
           else
-            gh release create "$TAG" --title "Latest main Qt5 build" --notes "$notes" --prerelease
+            gh release create "$TAG" --title "Latest main Qt5 and Qt6 builds" --notes "$notes" --prerelease
           fi
 
           gh release upload "$TAG" release-assets/* --clobber
