@@ -42,9 +42,9 @@ set(_SIGNALBRIDGE_AUTORCC ${CMAKE_AUTORCC})
 set(CMAKE_AUTOUIC OFF)
 set(CMAKE_AUTOMOC OFF)
 set(CMAKE_AUTORCC OFF)
-add_subdirectory(third_party/hidapi EXCLUDE_FROM_ALL)
-add_subdirectory(third_party/quickjs EXCLUDE_FROM_ALL)
-add_subdirectory(third_party/CSerialPort EXCLUDE_FROM_ALL)
+add_subdirectory(deps/hidapi EXCLUDE_FROM_ALL)
+add_subdirectory(deps/quickjs EXCLUDE_FROM_ALL)
+add_subdirectory(deps/CSerialPort EXCLUDE_FROM_ALL)
 set(CMAKE_AUTOUIC ${_SIGNALBRIDGE_AUTOUIC})
 set(CMAKE_AUTOMOC ${_SIGNALBRIDGE_AUTOMOC})
 set(CMAKE_AUTORCC ${_SIGNALBRIDGE_AUTORCC})
@@ -58,7 +58,7 @@ file(GLOB SIGNALBRIDGE_SIGNALRGB_SOURCES CONFIGURE_DEPENDS
 )
 
 set(SIGNALBRIDGE_CORE_SOURCES
-  OpenRGB/RGBController/RGBController.cpp
+  deps/OpenRGB/RGBController/RGBController.cpp
   src/config/DeviceConfigStore.cpp
   src/config/DeviceConfigStore.h
   src/domain/ControlParameters.cpp
@@ -100,9 +100,9 @@ set(SIGNALBRIDGE_COMMON_LIBS Qt${QT_VERSION_MAJOR}::Widgets hidapi::hidapi qjs l
 set(SIGNALBRIDGE_COMMON_INCLUDES
     ${CMAKE_CURRENT_SOURCE_DIR}/include
     ${CMAKE_CURRENT_SOURCE_DIR}/src
-    ${CMAKE_CURRENT_SOURCE_DIR}/OpenRGB
-    ${CMAKE_CURRENT_SOURCE_DIR}/OpenRGB/i2c_smbus
-    ${CMAKE_CURRENT_SOURCE_DIR}/third_party/CSerialPort/include
+    ${CMAKE_CURRENT_SOURCE_DIR}/deps/OpenRGB
+    ${CMAKE_CURRENT_SOURCE_DIR}/deps/OpenRGB/i2c_smbus
+    ${CMAKE_CURRENT_SOURCE_DIR}/deps/CSerialPort/include
 )
 
 add_library(SignalBridgePlugin SHARED)

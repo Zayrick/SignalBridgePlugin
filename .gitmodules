@@ -1,12 +1,12 @@
-[submodule "OpenRGB"]
-	path = OpenRGB
+[submodule "deps/OpenRGB"]
+	path = deps/OpenRGB
 	url = https://gitlab.com/CalcProgrammer1/OpenRGB.git
-[submodule "third_party/quickjs"]
-	path = third_party/quickjs
+[submodule "deps/quickjs"]
+	path = deps/quickjs
 	url = https://github.com/quickjs-ng/quickjs.git
-[submodule "third_party/hidapi"]
-	path = third_party/hidapi
+[submodule "deps/hidapi"]
+	path = deps/hidapi
 	url = https://github.com/libusb/hidapi.git
-[submodule "third_party/CSerialPort"]
-	path = third_party/CSerialPort
+[submodule "deps/CSerialPort"]
+	path = deps/CSerialPort
 	url = https://github.com/itas109/CSerialPort.git

@@ -194,8 +194,7 @@ SignalBridgePlugin/
 │   ├── config/              # 配置持久化
 │   └── ui/                  # Qt 小部件
 ├── tests/                   # 单元测试
-├── third_party/             # 依赖项（hidapi、quickjs）
-└── OpenRGB/                 # OpenRGB 头文件（子模块）
+└── deps/                    # 依赖子模块（CSerialPort、hidapi、OpenRGB、quickjs）
 ```
 
 ### 代码规范

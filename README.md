@@ -194,8 +194,7 @@ SignalBridgePlugin/
 │   ├── config/              # Configuration persistence
 │   └── ui/                  # Qt widgets
 ├── tests/                   # Unit tests
-├── third_party/             # Dependencies (hidapi, quickjs)
-└── OpenRGB/                 # OpenRGB headers (submodule)
+└── deps/                    # Dependency submodules (CSerialPort, hidapi, OpenRGB, quickjs)
 ```
 
 ### Code Conventions
