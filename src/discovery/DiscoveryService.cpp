@@ -114,7 +114,7 @@ bool IsHidScript(const ScriptMeta& meta)
 
 void DiscoveryService::Discover(
     int generation,
-    ResourceManagerInterface* manager,
+    OpenRgbHostInterface* manager,
     ControllerRegistry& registry,
     DeviceConfigStore& config_store,
     const DiscoveryCallbacks& callbacks) const
@@ -298,7 +298,7 @@ void DiscoveryService::Discover(
                                 }
                                 open_groups.insert(group);
                                 QJsonObject device_record = DeviceRecordForController(raw_controller->ScriptMetadata(), hid, config_key);
-                                device_record.insert("name", QString::fromStdString(raw_controller->name));
+                                device_record.insert("name", QString::fromStdString(raw_controller->Name()));
                                 registered_devices.append(device_record);
                                 matched++;
                                 detail_lines << QString("Registered: %1 [%2:%3] HID")
@@ -355,7 +355,7 @@ void DiscoveryService::Discover(
                             }
                             open_serial_ports.insert(port);
                             QJsonObject device_record = DeviceRecordForController(raw_controller->ScriptMetadata(), serial, config_key);
-                            device_record.insert("name", QString::fromStdString(raw_controller->name));
+                            device_record.insert("name", QString::fromStdString(raw_controller->Name()));
                             registered_devices.append(device_record);
                             matched++;
                             detail_lines << QString("Registered: %1 [%2:%3] Serial %4")

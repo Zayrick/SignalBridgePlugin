@@ -11,7 +11,8 @@
       "hidden": true,
       "binaryDir": "${sourceDir}/build/${presetName}",
       "cacheVariables": {
-        "CMAKE_EXPORT_COMPILE_COMMANDS": true
+        "CMAKE_EXPORT_COMPILE_COMMANDS": true,
+        "SIGNALBRIDGE_OPENRGB_API_VERSION": "4"
       }
     },
     {
@@ -33,6 +34,22 @@
       }
     },
     {
+      "name": "qt6-api5-debug",
+      "displayName": "Qt 6 Debug (OpenRGB API 5)",
+      "inherits": "qt6-debug",
+      "cacheVariables": {
+        "SIGNALBRIDGE_OPENRGB_API_VERSION": "5"
+      }
+    },
+    {
+      "name": "qt6-api5-release",
+      "displayName": "Qt 6 Release (OpenRGB API 5)",
+      "inherits": "qt6-release",
+      "cacheVariables": {
+        "SIGNALBRIDGE_OPENRGB_API_VERSION": "5"
+      }
+    },
+    {
       "name": "qt5-debug",
       "displayName": "Qt 5 Debug",
       "inherits": "base",
@@ -49,6 +66,22 @@
         "CMAKE_CONFIGURATION_TYPES": "Release",
         "CMAKE_PREFIX_PATH": "C:/Qt/5.15.2/msvc2019_64"
       }
+    },
+    {
+      "name": "qt5-api5-debug",
+      "displayName": "Qt 5 Debug (OpenRGB API 5)",
+      "inherits": "qt5-debug",
+      "cacheVariables": {
+        "SIGNALBRIDGE_OPENRGB_API_VERSION": "5"
+      }
+    },
+    {
+      "name": "qt5-api5-release",
+      "displayName": "Qt 5 Release (OpenRGB API 5)",
+      "inherits": "qt5-release",
+      "cacheVariables": {
+        "SIGNALBRIDGE_OPENRGB_API_VERSION": "5"
+      }
     }
   ],
   "buildPresets": [
@@ -63,6 +96,16 @@
       "configuration": "Release"
     },
     {
+      "name": "qt6-api5-debug",
+      "configurePreset": "qt6-api5-debug",
+      "configuration": "Debug"
+    },
+    {
+      "name": "qt6-api5-release",
+      "configurePreset": "qt6-api5-release",
+      "configuration": "Release"
+    },
+    {
       "name": "qt5-debug",
       "configurePreset": "qt5-debug",
       "configuration": "Debug"
@@ -70,6 +113,16 @@
     {
       "name": "qt5-release",
       "configurePreset": "qt5-release",
+      "configuration": "Release"
+    },
+    {
+      "name": "qt5-api5-debug",
+      "configurePreset": "qt5-api5-debug",
+      "configuration": "Debug"
+    },
+    {
+      "name": "qt5-api5-release",
+      "configurePreset": "qt5-api5-release",
       "configuration": "Release"
     }
   ]

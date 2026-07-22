@@ -8,10 +8,10 @@
 
 namespace signalbridge
 {
-void DeviceConfigStore::Load(ResourceManagerInterface* manager)
+void DeviceConfigStore::Load(const filesystem::path& configuration_root)
 {
     std::lock_guard<std::mutex> lock(mutex_);
-    manager_ = manager;
+    configuration_root_ = configuration_root;
     store_ = QJsonObject();
 
     try
@@ -40,7 +40,7 @@ void DeviceConfigStore::Load(ResourceManagerInterface* manager)
 void DeviceConfigStore::Reset()
 {
     std::lock_guard<std::mutex> lock(mutex_);
-    manager_ = nullptr;
+    configuration_root_.clear();
     store_ = QJsonObject();
 }
 
@@ -86,12 +86,12 @@ bool DeviceConfigStore::SetDeviceConfigurationValue(const QString& key, const QS
 
 QString DeviceConfigStore::StorePath() const
 {
-    if(manager_ == nullptr)
+    if(configuration_root_.empty())
     {
         return QString();
     }
 
-    const filesystem::path directory = manager_->GetConfigurationDirectory() / "SignalBridge";
+    const filesystem::path directory = configuration_root_ / "SignalBridge";
     filesystem::create_directories(directory);
     return QString::fromStdString((directory / "device_config.json").generic_u8string());
 }

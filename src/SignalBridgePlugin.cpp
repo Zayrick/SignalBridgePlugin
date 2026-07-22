@@ -7,10 +7,21 @@
 
 #include <QMetaObject>
 
+#if SIGNALBRIDGE_OPENRGB_API_VERSION == 5
+#include <QCoreApplication>
+#include <QEvent>
+#include <QThread>
+#endif
+
 #include "config/DeviceConfigStore.h"
 #include "discovery/ControllerRegistry.h"
 #include "discovery/DiscoveryService.h"
+#include "openrgb/OpenRgbCompat.h"
 #include "ui/SignalBridgeWidget.h"
+
+#if SIGNALBRIDGE_OPENRGB_API_VERSION == 5
+#include "ResourceManagerCallback.h"
+#endif
 
 namespace signalbridge
 {
@@ -32,14 +43,14 @@ public:
         UnregisterOpenRgbCallbacks();
     }
 
-    void Load(ResourceManagerInterface* manager)
+    void Load(OpenRgbHostInterface* manager)
     {
         resource_manager_.store(manager);
         unloading_.store(false);
         openrgb_detection_running_.store(false);
         pending_discovery_after_openrgb_detection_.store(false);
         RegisterOpenRgbCallbacks();
-        config_store_.Load(resource_manager_.load());
+        config_store_.Load(manager->GetConfigurationDirectory());
         EnsureWidget();
         widget_->SetResourceAvailable(true);
         widget_->ClearLogOutput();
@@ -79,7 +90,12 @@ public:
 
     void DiscoverSignalRgbDevices()
     {
-        ResourceManagerInterface* manager = resource_manager_.load();
+        if(unloading_.load())
+        {
+            return;
+        }
+
+        OpenRgbHostInterface* manager = resource_manager_.load();
         if(manager == nullptr)
         {
             return;
@@ -113,7 +129,7 @@ public:
 
         if(discovery_thread_.joinable())
         {
-            discovery_thread_.join();
+            JoinDiscoveryThread();
         }
 
         discovery_cancel_requested_.store(false);
@@ -161,6 +177,20 @@ public:
         }
     }
 
+#if SIGNALBRIDGE_OPENRGB_API_VERSION == 5
+    void ResourceManagerUpdated(unsigned int update_reason)
+    {
+        if(update_reason == RESOURCEMANAGER_UPDATE_REASON_DETECTION_STARTED)
+        {
+            OnOpenRgbDetectionStarted();
+        }
+        else if(update_reason == RESOURCEMANAGER_UPDATE_REASON_DETECTION_COMPLETE)
+        {
+            OnOpenRgbDetectionEnded();
+        }
+    }
+#endif
+
 private:
     void EnsureWidget()
     {
@@ -182,12 +212,9 @@ private:
         widget_->SetResourceAvailable(resource_manager_.load() != nullptr && !discovery_running_.load());
     }
 
-    void DiscoveryWorker(int generation, ResourceManagerInterface* manager)
+    void DiscoveryWorker(int generation, OpenRgbHostInterface* manager)
     {
-        if(manager != nullptr)
-        {
-            manager->WaitForDeviceDetection();
-        }
+        signalbridge::WaitForOpenRgbDetection(manager);
         if(IsDiscoveryStale(generation) || openrgb_detection_running_.load())
         {
             discovery_running_.store(false);
@@ -221,17 +248,50 @@ private:
     {
         discovery_cancel_requested_.store(true);
         discovery_generation_.fetch_add(1);
-        if(discovery_thread_.joinable())
-        {
-            discovery_thread_.join();
-        }
+        JoinDiscoveryThread();
         discovery_running_.store(false);
+    }
+
+    void JoinDiscoveryThread()
+    {
+        if(!discovery_thread_.joinable())
+        {
+            return;
+        }
+
+#if SIGNALBRIDGE_OPENRGB_API_VERSION == 5
+        QCoreApplication* application = QCoreApplication::instance();
+        const bool on_application_thread =
+            application != nullptr && QThread::currentThread() == application->thread();
+        while(on_application_thread && discovery_running_.load())
+        {
+            QCoreApplication::sendPostedEvents(nullptr, QEvent::MetaCall);
+            std::this_thread::yield();
+        }
+#endif
+
+        discovery_thread_.join();
+    }
+
+    void CancelDiscoveryThread()
+    {
+        discovery_cancel_requested_.store(true);
+        discovery_generation_.fetch_add(1);
     }
 
     void WaitForOpenRgbDetection()
     {
         while(openrgb_detection_running_.load())
         {
+#if SIGNALBRIDGE_OPENRGB_API_VERSION == 5
+            QCoreApplication* application = QCoreApplication::instance();
+            if(application != nullptr && QThread::currentThread() == application->thread())
+            {
+                QCoreApplication::sendPostedEvents(nullptr, QEvent::MetaCall);
+                std::this_thread::yield();
+                continue;
+            }
+#endif
             std::this_thread::sleep_for(std::chrono::milliseconds(1));
         }
     }
@@ -267,27 +327,31 @@ private:
 
     void RegisterOpenRgbCallbacks()
     {
-        ResourceManagerInterface* manager = resource_manager_.load();
+        OpenRgbHostInterface* manager = resource_manager_.load();
         if(manager == nullptr || callbacks_registered_)
         {
             return;
         }
 
+#if SIGNALBRIDGE_OPENRGB_API_VERSION == 4
         manager->RegisterDetectionStartCallback(OpenRgbDetectionStartCallback, this);
         manager->RegisterDetectionEndCallback(OpenRgbDetectionEndCallback, this);
+#endif
         callbacks_registered_ = true;
     }
 
     void UnregisterOpenRgbCallbacks()
     {
-        ResourceManagerInterface* manager = resource_manager_.load();
+        OpenRgbHostInterface* manager = resource_manager_.load();
         if(manager == nullptr || !callbacks_registered_)
         {
             return;
         }
 
+#if SIGNALBRIDGE_OPENRGB_API_VERSION == 4
         manager->UnregisterDetectionStartCallback(OpenRgbDetectionStartCallback, this);
         manager->UnregisterDetectionEndCallback(OpenRgbDetectionEndCallback, this);
+#endif
         callbacks_registered_ = false;
     }
 
@@ -295,8 +359,12 @@ private:
     {
         openrgb_detection_running_.store(true);
         pending_discovery_after_openrgb_detection_.store(!unloading_.load());
+#if SIGNALBRIDGE_OPENRGB_API_VERSION == 5
+        CancelDiscoveryThread();
+#else
         StopDiscoveryThread();
         registry_.AbandonOpenRgbOwnedControllers();
+#endif
 
         emit plugin_->DiscoveryStatusChanged(
             discovery_generation_.load(),
@@ -322,6 +390,9 @@ private:
                 [this]() {
                     if(!unloading_.load())
                     {
+#if SIGNALBRIDGE_OPENRGB_API_VERSION == 5
+                        StopDiscoveryThread();
+#endif
                         DiscoverSignalRgbDevices();
                     }
                 },
@@ -332,7 +403,7 @@ private:
     }
 
     SignalBridgePlugin* plugin_ = nullptr;
-    std::atomic<ResourceManagerInterface*> resource_manager_{ nullptr };
+    std::atomic<OpenRgbHostInterface*> resource_manager_{ nullptr };
     DeviceConfigStore config_store_;
     ControllerRegistry registry_;
     DiscoveryService discovery_service_;
@@ -369,7 +440,7 @@ SignalBridgePlugin::~SignalBridgePlugin() = default;
 
 OpenRGBPluginInfo SignalBridgePlugin::GetPluginInfo()
 {
-    OpenRGBPluginInfo info;
+    OpenRGBPluginInfo info{};
 
     info.Name = "Signal Bridge Plugin";
     info.Description = "Brings support for SignalRGB JavaScript device plugins to OpenRGB.";
@@ -378,6 +449,9 @@ OpenRGBPluginInfo SignalBridgePlugin::GetPluginInfo()
     info.URL = SIGNALBRIDGEPLUGIN_URL;
     info.Location = OPENRGB_PLUGIN_LOCATION_TOP;
     info.Label = "SignalBridge";
+#if SIGNALBRIDGE_OPENRGB_API_VERSION == 5
+    info.ProtocolVersion = 0;
+#endif
 
     return info;
 }
@@ -387,10 +461,17 @@ unsigned int SignalBridgePlugin::GetPluginAPIVersion()
     return OPENRGB_PLUGIN_API_VERSION;
 }
 
+#if SIGNALBRIDGE_OPENRGB_API_VERSION == 5
+void SignalBridgePlugin::Load(OpenRGBPluginAPIInterface* plugin_api_ptr)
+{
+    core_->Load(plugin_api_ptr);
+}
+#else
 void SignalBridgePlugin::Load(ResourceManagerInterface* resource_manager_ptr)
 {
     core_->Load(resource_manager_ptr);
 }
+#endif
 
 QWidget* SignalBridgePlugin::GetWidget()
 {
@@ -406,6 +487,43 @@ void SignalBridgePlugin::Unload()
 {
     core_->Unload();
 }
+
+#if SIGNALBRIDGE_OPENRGB_API_VERSION == 5
+void SignalBridgePlugin::OnProfileAboutToLoad()
+{
+}
+
+void SignalBridgePlugin::OnProfileLoad(nlohmann::json)
+{
+}
+
+nlohmann::json SignalBridgePlugin::OnProfileSave()
+{
+    return nlohmann::json::object();
+}
+
+unsigned char* SignalBridgePlugin::OnSDKCommand(unsigned int, unsigned char*, unsigned int* packet_size)
+{
+    if(packet_size != nullptr)
+    {
+        *packet_size = 0;
+    }
+    return nullptr;
+}
+
+void SignalBridgePlugin::ProfileManagerUpdated(unsigned int)
+{
+}
+
+void SignalBridgePlugin::ResourceManagerUpdated(unsigned int update_reason)
+{
+    core_->ResourceManagerUpdated(update_reason);
+}
+
+void SignalBridgePlugin::SettingsManagerUpdated(unsigned int)
+{
+}
+#endif
 
 void SignalBridgePlugin::ApplyDiscoveryStatus(
     int generation,

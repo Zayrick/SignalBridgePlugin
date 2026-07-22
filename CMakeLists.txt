@@ -24,6 +24,31 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 
+set(SIGNALBRIDGE_OPENRGB_API_VERSION "4" CACHE STRING "OpenRGB plugin API version to build against (4 or 5)")
+set_property(CACHE SIGNALBRIDGE_OPENRGB_API_VERSION PROPERTY STRINGS 4 5)
+
+if(NOT SIGNALBRIDGE_OPENRGB_API_VERSION STREQUAL "4" AND
+   NOT SIGNALBRIDGE_OPENRGB_API_VERSION STREQUAL "5")
+    message(FATAL_ERROR
+        "Unsupported SIGNALBRIDGE_OPENRGB_API_VERSION='${SIGNALBRIDGE_OPENRGB_API_VERSION}'. "
+        "Expected 4 or 5.")
+endif()
+
+if(SIGNALBRIDGE_OPENRGB_API_VERSION STREQUAL "5")
+    set(SIGNALBRIDGE_OPENRGB_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/deps/OpenRGB_API5")
+    set(SIGNALBRIDGE_OPENRGB_SOURCES)
+    set(SIGNALBRIDGE_OPENRGB_EXTRA_INCLUDES
+        "${SIGNALBRIDGE_OPENRGB_ROOT}/RGBController"
+        "${SIGNALBRIDGE_OPENRGB_ROOT}/dependencies/json"
+    )
+else()
+    set(SIGNALBRIDGE_OPENRGB_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/deps/OpenRGB")
+    set(SIGNALBRIDGE_OPENRGB_SOURCES
+        "${SIGNALBRIDGE_OPENRGB_ROOT}/RGBController/RGBController.cpp"
+    )
+    set(SIGNALBRIDGE_OPENRGB_EXTRA_INCLUDES)
+endif()
+
 find_package(QT NAMES Qt6 Qt5 REQUIRED COMPONENTS Widgets)
 find_package(Qt${QT_VERSION_MAJOR} REQUIRED COMPONENTS Widgets)
 
@@ -58,7 +83,7 @@ file(GLOB SIGNALBRIDGE_SIGNALRGB_SOURCES CONFIGURE_DEPENDS
 )
 
 set(SIGNALBRIDGE_CORE_SOURCES
-  deps/OpenRGB/RGBController/RGBController.cpp
+  ${SIGNALBRIDGE_OPENRGB_SOURCES}
   src/config/DeviceConfigStore.cpp
   src/config/DeviceConfigStore.h
   src/domain/ControlParameters.cpp
@@ -100,15 +125,20 @@ set(SIGNALBRIDGE_COMMON_LIBS Qt${QT_VERSION_MAJOR}::Widgets hidapi::hidapi qjs l
 set(SIGNALBRIDGE_COMMON_INCLUDES
     ${CMAKE_CURRENT_SOURCE_DIR}/include
     ${CMAKE_CURRENT_SOURCE_DIR}/src
-    ${CMAKE_CURRENT_SOURCE_DIR}/deps/OpenRGB
-    ${CMAKE_CURRENT_SOURCE_DIR}/deps/OpenRGB/i2c_smbus
+    ${SIGNALBRIDGE_OPENRGB_ROOT}
+    ${SIGNALBRIDGE_OPENRGB_ROOT}/i2c_smbus
+    ${SIGNALBRIDGE_OPENRGB_EXTRA_INCLUDES}
     ${CMAKE_CURRENT_SOURCE_DIR}/deps/CSerialPort/include
+)
+set(SIGNALBRIDGE_COMMON_DEFINITIONS
+    SIGNALBRIDGE_OPENRGB_API_VERSION=${SIGNALBRIDGE_OPENRGB_API_VERSION}
 )
 
 add_library(SignalBridgePlugin SHARED)
 
 target_sources(SignalBridgePlugin PRIVATE
   include/SignalBridge/SignalBridgePlugin.h
+  include/SignalBridge/SignalBridgePlugin.json
   include/SignalBridge/SignalBridgePlugin_global.h
   src/SignalBridgePlugin.cpp
   src/discovery/ControllerRegistry.cpp
@@ -137,6 +167,7 @@ target_link_libraries(SignalBridgePlugin PRIVATE ${SIGNALBRIDGE_COMMON_LIBS})
 target_include_directories(SignalBridgePlugin PRIVATE ${SIGNALBRIDGE_COMMON_INCLUDES})
 
 target_compile_definitions(SignalBridgePlugin PRIVATE
+    ${SIGNALBRIDGE_COMMON_DEFINITIONS}
     SIGNALBRIDGEPLUGIN_LIBRARY
     SIGNALBRIDGEPLUGIN_VERSION="${PROJECT_VERSION}"
     SIGNALBRIDGEPLUGIN_COMMIT="${SIGNALBRIDGEPLUGIN_COMMIT}"
@@ -158,6 +189,7 @@ if(SIGNALBRIDGE_BUILD_TESTS)
         ${SIGNALBRIDGE_CORE_SOURCES}
     )
     target_link_libraries(SignalBridgeCoreTests PRIVATE ${SIGNALBRIDGE_COMMON_LIBS})
+    target_compile_definitions(SignalBridgeCoreTests PRIVATE ${SIGNALBRIDGE_COMMON_DEFINITIONS})
     if(MSVC)
         target_compile_options(SignalBridgeCoreTests PRIVATE /FS)
     endif()

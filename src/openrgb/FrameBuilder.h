@@ -3,7 +3,18 @@
 
 #include <vector>
 
+#ifndef SIGNALBRIDGE_OPENRGB_API_VERSION
+#define SIGNALBRIDGE_OPENRGB_API_VERSION 4
+#endif
+
+#if SIGNALBRIDGE_OPENRGB_API_VERSION == 5
+#include "RGBController/RGBControllerInterface.h"
+#elif SIGNALBRIDGE_OPENRGB_API_VERSION == 4
 #include "RGBController/RGBController.h"
+#else
+#error Unsupported SIGNALBRIDGE_OPENRGB_API_VERSION
+#endif
+
 #include "domain/ColorFrame.h"
 #include "openrgb/TopologyMapper.h"
 

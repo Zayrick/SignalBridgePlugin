@@ -7,7 +7,7 @@
 #include <QJsonValue>
 #include <QString>
 
-#include "ResourceManagerInterface.h"
+#include "filesystem.h"
 #include "domain/ScriptTypes.h"
 
 namespace signalbridge
@@ -15,7 +15,7 @@ namespace signalbridge
 class DeviceConfigStore
 {
 public:
-    void Load(ResourceManagerInterface* manager);
+    void Load(const filesystem::path& configuration_root);
     void Reset();
 
     QJsonObject ConfigurationForDevice(const QString& key, const QString& script_key) const;
@@ -26,7 +26,7 @@ private:
     QString StorePath() const;
     bool Save() const;
 
-    ResourceManagerInterface* manager_ = nullptr;
+    filesystem::path configuration_root_;
     mutable std::mutex mutex_;
     QJsonObject store_;
 };

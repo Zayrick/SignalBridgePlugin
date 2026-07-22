@@ -145,6 +145,25 @@ std::vector<int> BuildMatrixMap(
     return map;
 }
 
+#if SIGNALBRIDGE_OPENRGB_API_VERSION == 5
+matrix_map_type CreateOpenRgbMatrixMap(unsigned int width, unsigned int height, const std::vector<int>& map)
+{
+    matrix_map_type matrix;
+    if(width == 0 || height == 0 || map.empty())
+    {
+        return matrix;
+    }
+
+    matrix.width = width;
+    matrix.height = height;
+    matrix.map.reserve(map.size());
+    for(int led_index : map)
+    {
+        matrix.map.push_back(led_index >= 0 ? static_cast<unsigned int>(led_index) : kMatrixDisabled);
+    }
+    return matrix;
+}
+#else
 matrix_map_type* CreateOpenRgbMatrixMap(unsigned int width, unsigned int height, const std::vector<int>& map)
 {
     if(width == 0 || height == 0 || map.empty())
@@ -162,6 +181,7 @@ matrix_map_type* CreateOpenRgbMatrixMap(unsigned int width, unsigned int height,
     }
     return matrix;
 }
+#endif
 
 QJsonObject FallbackTopology(const ScriptMeta& meta)
 {
@@ -322,6 +342,12 @@ TopologyResult BuildOpenRgbTopology(const QJsonObject& raw_topology, const Scrip
 
 void DeleteZoneMaps(std::vector<zone>& zones)
 {
+#if SIGNALBRIDGE_OPENRGB_API_VERSION == 5
+    for(zone& current_zone : zones)
+    {
+        current_zone.matrix_map = matrix_map_type();
+    }
+#else
     for(zone& current_zone : zones)
     {
         if(current_zone.matrix_map != nullptr)
@@ -331,6 +357,7 @@ void DeleteZoneMaps(std::vector<zone>& zones)
             current_zone.matrix_map = nullptr;
         }
     }
+#endif
 }
 
 void RebuildOpenRgbLedList(

@@ -6,9 +6,9 @@
 #include <QString>
 #include <QStringList>
 
-#include "ResourceManagerInterface.h"
 #include "config/DeviceConfigStore.h"
 #include "discovery/ControllerRegistry.h"
+#include "openrgb/OpenRgbCompat.h"
 
 namespace signalbridge
 {
@@ -31,7 +31,7 @@ class DiscoveryService
 public:
     void Discover(
         int generation,
-        ResourceManagerInterface* manager,
+        OpenRgbHostInterface* manager,
         ControllerRegistry& registry,
         DeviceConfigStore& config_store,
         const DiscoveryCallbacks& callbacks) const;

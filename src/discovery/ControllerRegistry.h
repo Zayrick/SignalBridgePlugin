@@ -9,7 +9,7 @@
 #include <QJsonValue>
 #include <QString>
 
-#include "ResourceManagerInterface.h"
+#include "openrgb/OpenRgbCompat.h"
 #include "openrgb/SignalBridgeController.h"
 
 namespace signalbridge
@@ -18,12 +18,12 @@ class ControllerRegistry
 {
 public:
     SignalBridgeController* Register(
-        ResourceManagerInterface* manager,
+        OpenRgbHostInterface* manager,
         std::unique_ptr<SignalBridgeController> controller);
     void AbandonOpenRgbOwnedControllers();
-    void UnregisterAndDeleteControllers(ResourceManagerInterface* manager);
+    void UnregisterAndDeleteControllers(OpenRgbHostInterface* manager);
     void ApplyConfiguration(
-        ResourceManagerInterface* manager,
+        OpenRgbHostInterface* manager,
         const QString& key,
         const QString& property,
         const QJsonValue& value);
@@ -32,7 +32,11 @@ private:
     struct Entry
     {
         SignalBridgeController* controller = nullptr;
+        OpenRgbControllerInterface* openrgb_controller = nullptr;
         std::string config_key;
+#if SIGNALBRIDGE_OPENRGB_API_VERSION == 5
+        std::unique_ptr<SignalBridgeController> owned_controller;
+#endif
     };
 
     std::mutex mutex_;

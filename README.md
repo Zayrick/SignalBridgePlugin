@@ -28,7 +28,7 @@ SignalRGB and OpenRGB names are used only to describe compatibility with their r
 ## System Requirements
 
 ### Runtime Requirements
-- **OpenRGB**: 0.7 or later (with plugin support)
+- **OpenRGB**: A host matching the selected plugin API (API 4 for the existing presets, API 5 for the `*-api5-*` presets)
 - **Operating System**: Windows 10/11 (tested); Linux/macOS have not been tested
 - **Device Scripts**: Place compatible `.js` scripts that you are permitted to use in OpenRGB's configuration directory under `SignalBridge/scripts/` (default Windows path: `%APPDATA%/OpenRGB/SignalBridge/scripts/`)
 
@@ -48,19 +48,31 @@ git submodule update --init --recursive
 ```
 
 ### 2. Configure with CMake
-Choose a preset based on your Qt version and build type:
+Choose a preset based on your OpenRGB plugin API, Qt version, and build type. The existing presets build the API 4 plugin against `deps/OpenRGB` (API 4 remains the default):
 
 ```bash
-# Qt 6 Debug (recommended for development)
+# OpenRGB plugin API 4, Qt 6
 cmake --preset qt6-debug
-
-# Qt 6 Release (recommended for production)
 cmake --preset qt6-release
 
-# Qt 5 alternatives
+# OpenRGB plugin API 4, Qt 5
 cmake --preset qt5-debug
 cmake --preset qt5-release
 ```
+
+The API 5 presets build against `deps/OpenRGB_API5`:
+
+```bash
+# OpenRGB plugin API 5, Qt 6
+cmake --preset qt6-api5-debug
+cmake --preset qt6-api5-release
+
+# OpenRGB plugin API 5, Qt 5
+cmake --preset qt5-api5-debug
+cmake --preset qt5-api5-release
+```
+
+For a custom configure command, set `SIGNALBRIDGE_OPENRGB_API_VERSION` to `4` or `5`; omitting it selects API 4.
 
 ### 3. Build the Plugin
 ```bash
@@ -69,6 +81,9 @@ cmake --build build/qt6-debug --config Debug --target SignalBridgePlugin
 
 # For Qt 6 Release
 cmake --build build/qt6-release --config Release --target SignalBridgePlugin
+
+# For OpenRGB API 5 with Qt 6 Release
+cmake --build build/qt6-api5-release --config Release --target SignalBridgePlugin
 ```
 
 **Alternative: Fast Parallel Builds with JOM**
@@ -82,7 +97,7 @@ C:\Qt\Tools\QtCreator\bin\jom\jom.exe
 ### 4. Run Tests (Optional)
 ```bash
 # Run all tests
-ctest --test-dir build/qt6-debug --output-on-failure
+ctest --test-dir build/qt6-debug -C Debug --output-on-failure
 
 # Or run the test executable directly
 ./build/qt6-debug/Debug/SignalBridgeCoreTests.exe
@@ -91,7 +106,7 @@ ctest --test-dir build/qt6-debug --output-on-failure
 ## Installation
 
 1. **Build the plugin** following the instructions above
-2. **Locate the output DLL**: `build/qt6-release/Release/SignalBridgePlugin.dll`
+2. **Locate the output DLL**: `build/qt6-release/Release/SignalBridgePlugin.dll` for API 4, or `build/qt6-api5-release/Release/SignalBridgePlugin.dll` for API 5
 3. **Copy to OpenRGB plugins directory**:
    ```
    %APPDATA%/OpenRGB/plugins/SignalBridgePlugin.dll

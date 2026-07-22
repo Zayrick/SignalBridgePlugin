@@ -11,7 +11,7 @@
 #include <QJsonObject>
 #include <QTemporaryDir>
 
-#include "ResourceManagerInterface.h"
+#include "filesystem.h"
 #include "config/DeviceConfigStore.h"
 #include "domain/ControlParameters.h"
 #include "domain/PathUtils.h"
@@ -22,47 +22,6 @@
 
 namespace
 {
-class FakeResourceManager : public ResourceManagerInterface
-{
-public:
-    explicit FakeResourceManager(filesystem::path config_dir)
-        : config_dir_(std::move(config_dir))
-    {
-    }
-
-    std::vector<i2c_smbus_interface*>& GetI2CBusses() override { return i2c_busses_; }
-    void RegisterRGBController(RGBController* rgb_controller) override { controllers_.push_back(rgb_controller); }
-    void UnregisterRGBController(RGBController* rgb_controller) override
-    {
-        controllers_.erase(std::remove(controllers_.begin(), controllers_.end(), rgb_controller), controllers_.end());
-    }
-    void RegisterDeviceListChangeCallback(DeviceListChangeCallback, void*) override {}
-    void RegisterDetectionProgressCallback(DetectionProgressCallback, void*) override {}
-    void RegisterDetectionStartCallback(DetectionStartCallback, void*) override {}
-    void RegisterDetectionEndCallback(DetectionEndCallback, void*) override {}
-    void RegisterI2CBusListChangeCallback(I2CBusListChangeCallback, void*) override {}
-    void UnregisterDeviceListChangeCallback(DeviceListChangeCallback, void*) override {}
-    void UnregisterDetectionProgressCallback(DetectionProgressCallback, void*) override {}
-    void UnregisterDetectionStartCallback(DetectionStartCallback, void*) override {}
-    void UnregisterDetectionEndCallback(DetectionEndCallback, void*) override {}
-    void UnregisterI2CBusListChangeCallback(I2CBusListChangeCallback, void*) override {}
-    std::vector<RGBController*>& GetRGBControllers() override { return controllers_; }
-    unsigned int GetDetectionPercent() override { return 0; }
-    filesystem::path GetConfigurationDirectory() override { return config_dir_; }
-    std::vector<NetworkClient*>& GetClients() override { return clients_; }
-    NetworkServer* GetServer() override { return nullptr; }
-    ProfileManager* GetProfileManager() override { return nullptr; }
-    SettingsManager* GetSettingsManager() override { return nullptr; }
-    void UpdateDeviceList() override {}
-    void WaitForDeviceDetection() override {}
-
-private:
-    filesystem::path config_dir_;
-    std::vector<i2c_smbus_interface*> i2c_busses_;
-    std::vector<RGBController*> controllers_;
-    std::vector<NetworkClient*> clients_;
-};
-
 bool Check(bool condition, const char* message)
 {
     if(!condition)
@@ -113,9 +72,9 @@ bool TestDeviceConfigStore()
         return false;
     }
 
-    FakeResourceManager manager(filesystem::path(temp.path().toStdString()));
+    const filesystem::path configuration_root(temp.path().toStdString());
     DeviceConfigStore store;
-    store.Load(&manager);
+    store.Load(configuration_root);
 
     ScriptMeta meta;
     meta.lookup_path = "keyboard.js";
@@ -132,7 +91,7 @@ bool TestDeviceConfigStore()
               Check(merged.value("brightness").toInt() == 75, "device config preserves extra exact values");
 
     DeviceConfigStore reloaded;
-    reloaded.Load(&manager);
+    reloaded.Load(configuration_root);
     const QJsonObject saved = reloaded.ConfigurationForDevice("keyboard.js|SERIAL", meta);
     ok = ok &&
          Check(saved.value("mode").toString() == "device", "atomic saved config reloads as complete JSON") &&
@@ -155,9 +114,8 @@ bool TestDeviceConfigStore()
             legacy_file.close();
         }
 
-        FakeResourceManager legacy_manager(filesystem::path(legacy_temp.path().toStdString()));
         DeviceConfigStore legacy_store;
-        legacy_store.Load(&legacy_manager);
+        legacy_store.Load(filesystem::path(legacy_temp.path().toStdString()));
         ok = Check(legacy_store.ConfigurationForDevice("keyboard.js|SERIAL", meta).value("mode").toString() == "legacy",
                    "legacy root config format still loads") &&
              ok;
@@ -549,6 +507,23 @@ bool TestTopologyAndFrame()
               Check(topology.zones[0].type == ZONE_TYPE_MATRIX, "fallback topology uses matrix zone for 2D layout") &&
               Check(leds.size() == 2, "led list follows metadata led count") &&
               Check(leds[0].name == "Key: Esc", "keyboard led names get OpenRGB key prefix");
+
+#if SIGNALBRIDGE_OPENRGB_API_VERSION == 5
+    ok = Check(topology.zones[0].matrix_map.width == 2 && topology.zones[0].matrix_map.height == 2,
+               "API5 matrix map keeps its dimensions by value") &&
+         Check(topology.zones[0].matrix_map.map.size() == 4 && topology.zones[0].matrix_map.map[0] == 0 &&
+                   topology.zones[0].matrix_map.map[1] == 1 && topology.zones[0].matrix_map.map[2] == 0xFFFFFFFF,
+               "API5 matrix map stores LED indices in its vector") &&
+         ok;
+#else
+    ok = Check(topology.zones[0].matrix_map != nullptr && topology.zones[0].matrix_map->width == 2 &&
+                   topology.zones[0].matrix_map->height == 2,
+               "API4 matrix map keeps its allocated dimensions") &&
+         Check(topology.zones[0].matrix_map != nullptr && topology.zones[0].matrix_map->map[0] == 0 &&
+                   topology.zones[0].matrix_map->map[1] == 1 && topology.zones[0].matrix_map->map[2] == 0xFFFFFFFF,
+               "API4 matrix map stores LED indices in its allocated array") &&
+         ok;
+#endif
 
     std::vector<RGBColor> colors = {
         ToRGBColor(1, 2, 3),

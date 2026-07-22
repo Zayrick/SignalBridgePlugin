@@ -172,6 +172,13 @@ SignalBridgeController::SignalBridgeController(
         config_key_ = meta_.lookup_path.empty() ? meta_.source_path : meta_.lookup_path;
     }
 
+    mode direct;
+    direct.name = "Direct";
+    direct.value = 0;
+    direct.flags = MODE_FLAG_HAS_PER_LED_COLOR;
+    direct.color_mode = MODE_COLORS_PER_LED;
+
+#if SIGNALBRIDGE_OPENRGB_API_VERSION == 4
     name = meta_.name;
     vendor = meta_.publisher.empty() ? FirstWord(meta_.name) : meta_.publisher;
     description = "SignalRGB script device";
@@ -180,19 +187,35 @@ SignalBridgeController::SignalBridgeController(
     location = primary_hid_.path;
     type = ResolveOpenRgbDeviceType(meta_.device_type);
     flags = CONTROLLER_FLAG_LOCAL;
-
-    mode direct;
-    direct.name = "Direct";
-    direct.value = 0;
-    direct.flags = MODE_FLAG_HAS_PER_LED_COLOR;
-    direct.color_mode = MODE_COLORS_PER_LED;
     modes.push_back(direct);
     active_mode = 0;
+#else
+    setup_.name = meta_.name;
+    setup_.vendor = meta_.publisher.empty() ? FirstWord(meta_.name) : meta_.publisher;
+    setup_.description = "SignalRGB script device";
+    setup_.version = "SignalRGB Bridge";
+    setup_.serial = primary_hid_.serial;
+    setup_.location = primary_hid_.path;
+    setup_.type = ResolveOpenRgbDeviceType(meta_.device_type);
+    setup_.flags = CONTROLLER_FLAG_VIRTUAL;
+    setup_.modes.push_back(direct);
+    setup_.active_mode = 0;
+    setup_.object_ptr = this;
+    setup_.DeviceConfigureZone = DeviceConfigureZoneCallback;
+    setup_.DeviceUpdateLEDs = DeviceUpdateLEDsCallback;
+    setup_.DeviceUpdateZoneLEDs = DeviceUpdateZoneLEDsCallback;
+    setup_.DeviceUpdateSingleLED = DeviceUpdateSingleLEDCallback;
+    setup_.DeviceUpdateMode = DeviceUpdateModeCallback;
+    setup_.DeviceUpdateZoneMode = DeviceUpdateZoneModeCallback;
+    setup_.DeviceSaveMode = DeviceSaveModeCallback;
+#endif
 
     endpoint_session_ = std::make_unique<EndpointSession>(hid_backend_, primary_hid_);
     CreateRuntime();
     InitializeScript();
+#if SIGNALBRIDGE_OPENRGB_API_VERSION == 4
     SetupColors();
+#endif
 }
 
 SignalBridgeController::SignalBridgeController(
@@ -214,6 +237,13 @@ SignalBridgeController::SignalBridgeController(
         config_key_ = meta_.lookup_path.empty() ? meta_.source_path : meta_.lookup_path;
     }
 
+    mode direct;
+    direct.name = "Direct";
+    direct.value = 0;
+    direct.flags = MODE_FLAG_HAS_PER_LED_COLOR;
+    direct.color_mode = MODE_COLORS_PER_LED;
+
+#if SIGNALBRIDGE_OPENRGB_API_VERSION == 4
     name = meta_.name;
     vendor = meta_.publisher.empty() ? FirstWord(meta_.name) : meta_.publisher;
     description = "SignalRGB serial script device";
@@ -222,22 +252,41 @@ SignalBridgeController::SignalBridgeController(
     location = !primary_serial_.port_name.empty() ? "Serial: " + primary_serial_.port_name : primary_serial_.system_location;
     type = ResolveOpenRgbDeviceType(meta_.device_type);
     flags = CONTROLLER_FLAG_LOCAL;
-
-    mode direct;
-    direct.name = "Direct";
-    direct.value = 0;
-    direct.flags = MODE_FLAG_HAS_PER_LED_COLOR;
-    direct.color_mode = MODE_COLORS_PER_LED;
     modes.push_back(direct);
     active_mode = 0;
+#else
+    setup_.name = meta_.name;
+    setup_.vendor = meta_.publisher.empty() ? FirstWord(meta_.name) : meta_.publisher;
+    setup_.description = "SignalRGB serial script device";
+    setup_.version = "SignalRGB Bridge";
+    setup_.serial = primary_serial_.serial_number;
+    setup_.location = !primary_serial_.port_name.empty() ? "Serial: " + primary_serial_.port_name : primary_serial_.system_location;
+    setup_.type = ResolveOpenRgbDeviceType(meta_.device_type);
+    setup_.flags = CONTROLLER_FLAG_VIRTUAL;
+    setup_.modes.push_back(direct);
+    setup_.active_mode = 0;
+    setup_.object_ptr = this;
+    setup_.DeviceConfigureZone = DeviceConfigureZoneCallback;
+    setup_.DeviceUpdateLEDs = DeviceUpdateLEDsCallback;
+    setup_.DeviceUpdateZoneLEDs = DeviceUpdateZoneLEDsCallback;
+    setup_.DeviceUpdateSingleLED = DeviceUpdateSingleLEDCallback;
+    setup_.DeviceUpdateMode = DeviceUpdateModeCallback;
+    setup_.DeviceUpdateZoneMode = DeviceUpdateZoneModeCallback;
+    setup_.DeviceSaveMode = DeviceSaveModeCallback;
+#endif
 
     CreateRuntime();
     InitializeScript();
+#if SIGNALBRIDGE_OPENRGB_API_VERSION == 4
     SetupColors();
+#endif
 }
 
 SignalBridgeController::~SignalBridgeController()
 {
+#if SIGNALBRIDGE_OPENRGB_API_VERSION == 5
+    DetachOpenRgbController();
+#endif
     std::lock_guard<std::mutex> lock(mutex_);
     shutting_down_ = true;
     if(runtime_ != nullptr && runtime_->HasModuleExport("Shutdown"))
@@ -254,9 +303,162 @@ SignalBridgeController::~SignalBridgeController()
     }
     runtime_.reset();
     endpoint_session_.reset();
+#if SIGNALBRIDGE_OPENRGB_API_VERSION == 4
     DeleteZoneMaps(zones);
+#else
+    DeleteZoneMaps(setup_.zones);
+#endif
 }
 
+#if SIGNALBRIDGE_OPENRGB_API_VERSION == 5
+RGBController_Setup SignalBridgeController::OpenRgbSetup() const
+{
+    std::lock_guard<std::mutex> lock(mutex_);
+    return setup_;
+}
+
+void SignalBridgeController::AttachOpenRgbController(
+    OpenRgbHostInterface* host,
+    OpenRgbControllerInterface* controller)
+{
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        openrgb_host_ = host;
+        openrgb_controller_ = controller;
+        published_led_count_ = setup_.leds.size();
+        shutting_down_ = false;
+        stop_topology_update_thread_ = false;
+        topology_update_pending_ = false;
+    }
+
+    topology_update_thread_ = std::thread(&SignalBridgeController::TopologyUpdateWorker, this);
+}
+
+void SignalBridgeController::DetachOpenRgbController()
+{
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        shutting_down_ = true;
+        stop_topology_update_thread_ = true;
+        topology_update_pending_ = false;
+        topology_update_cv_.notify_all();
+    }
+
+    if(topology_update_thread_.joinable())
+    {
+        topology_update_thread_.join();
+    }
+
+    std::lock_guard<std::mutex> lock(mutex_);
+    openrgb_host_ = nullptr;
+    openrgb_controller_ = nullptr;
+    published_led_count_ = 0;
+}
+
+void SignalBridgeController::TopologyUpdateWorker()
+{
+    while(true)
+    {
+        RGBController_Setup setup;
+        OpenRgbHostInterface* host = nullptr;
+        OpenRgbControllerInterface* controller = nullptr;
+
+        {
+            std::unique_lock<std::mutex> lock(mutex_);
+            topology_update_cv_.wait(lock, [this]() {
+                return stop_topology_update_thread_ || topology_update_pending_;
+            });
+            if(stop_topology_update_thread_)
+            {
+                return;
+            }
+
+            setup = setup_;
+            host = openrgb_host_;
+            controller = openrgb_controller_;
+            topology_update_pending_ = false;
+        }
+
+        if(host != nullptr && controller != nullptr)
+        {
+            try
+            {
+                host->UnregisterVirtualRGBController(controller);
+                host->UpdateVirtualRGBController(controller, &setup);
+                {
+                    std::lock_guard<std::mutex> lock(mutex_);
+                    if(openrgb_controller_ == controller)
+                    {
+                        published_led_count_ = setup.leds.size();
+                    }
+                }
+                host->RegisterVirtualRGBController(controller);
+            }
+            catch(...)
+            {
+            }
+        }
+    }
+}
+
+void SignalBridgeController::DeviceConfigureZoneCallback(void* context, int zone)
+{
+    if(context != nullptr)
+    {
+        static_cast<SignalBridgeController*>(context)->DeviceConfigureZone(zone);
+    }
+}
+
+void SignalBridgeController::DeviceUpdateLEDsCallback(void* context)
+{
+    if(context != nullptr)
+    {
+        static_cast<SignalBridgeController*>(context)->DeviceUpdateLEDs();
+    }
+}
+
+void SignalBridgeController::DeviceUpdateZoneLEDsCallback(void* context, int zone)
+{
+    if(context != nullptr)
+    {
+        static_cast<SignalBridgeController*>(context)->DeviceUpdateZoneLEDs(zone);
+    }
+}
+
+void SignalBridgeController::DeviceUpdateSingleLEDCallback(void* context, int led)
+{
+    if(context != nullptr)
+    {
+        static_cast<SignalBridgeController*>(context)->DeviceUpdateSingleLED(led);
+    }
+}
+
+void SignalBridgeController::DeviceUpdateModeCallback(void* context)
+{
+    if(context != nullptr)
+    {
+        static_cast<SignalBridgeController*>(context)->DeviceUpdateMode();
+    }
+}
+
+void SignalBridgeController::DeviceUpdateZoneModeCallback(void* context, int zone)
+{
+    if(context != nullptr)
+    {
+        static_cast<SignalBridgeController*>(context)->DeviceUpdateZoneMode(zone);
+    }
+}
+
+void SignalBridgeController::DeviceSaveModeCallback(void* context)
+{
+    if(context != nullptr)
+    {
+        static_cast<SignalBridgeController*>(context)->DeviceSaveMode();
+    }
+}
+#endif
+
+#if SIGNALBRIDGE_OPENRGB_API_VERSION == 4
 void SignalBridgeController::SetupZones()
 {
 }
@@ -281,6 +483,7 @@ void SignalBridgeController::ResizeZone(int zone_index, int new_size)
     RebuildOpenRgbLedList(zones, zone_targets_, type, leds, led_alt_names);
     SetupColors();
 }
+#endif
 
 void SignalBridgeController::DeviceUpdateLEDs()
 {
@@ -310,25 +513,29 @@ void SignalBridgeController::DeviceUpdateLEDs()
             ClearSubdeviceFrame(subdevice);
         }
 
-        for(std::size_t zone_idx = 0; zone_idx < zones.size() && zone_idx < zone_targets_.size(); zone_idx++)
+        std::vector<zone> openrgb_zones;
+        std::vector<RGBColor> openrgb_colors;
+        SnapshotOpenRgbState(openrgb_zones, openrgb_colors);
+
+        for(std::size_t zone_idx = 0; zone_idx < openrgb_zones.size() && zone_idx < zone_targets_.size(); zone_idx++)
         {
             const ZoneTarget& target = zone_targets_[zone_idx];
             switch(target.kind)
             {
             case ZoneTarget::Kind::Main:
-                BuildFrameForZone(zones, colors, static_cast<unsigned int>(zone_idx), target, device.main_frame);
+                BuildFrameForZone(openrgb_zones, openrgb_colors, static_cast<unsigned int>(zone_idx), target, device.main_frame);
                 break;
             case ZoneTarget::Kind::Channel:
                 if(RuntimeChannelState* channel = FindRuntimeChannel(device, target.key))
                 {
-                    BuildFrameColorsForZone(zones, colors, static_cast<unsigned int>(zone_idx), target, channel->colors);
+                    BuildFrameColorsForZone(openrgb_zones, openrgb_colors, static_cast<unsigned int>(zone_idx), target, channel->colors);
                     FinalizeChannelFrame(*channel);
                 }
                 break;
             case ZoneTarget::Kind::Subdevice:
                 if(RuntimeSubdeviceState* subdevice = FindRuntimeSubdevice(device, target.key))
                 {
-                    BuildFrameColorsForZone(zones, colors, static_cast<unsigned int>(zone_idx), target, subdevice->colors);
+                    BuildFrameColorsForZone(openrgb_zones, openrgb_colors, static_cast<unsigned int>(zone_idx), target, subdevice->colors);
                     FinalizeSubdeviceFrame(*subdevice);
                 }
                 break;
@@ -345,6 +552,7 @@ void SignalBridgeController::DeviceUpdateLEDs()
     }
 }
 
+#if SIGNALBRIDGE_OPENRGB_API_VERSION == 4
 void SignalBridgeController::UpdateZoneLEDs(int)
 {
     DeviceUpdateLEDs();
@@ -359,6 +567,29 @@ void SignalBridgeController::SetCustomMode()
 {
     active_mode = 0;
 }
+#else
+void SignalBridgeController::DeviceUpdateZoneLEDs(int)
+{
+    DeviceUpdateLEDs();
+}
+
+void SignalBridgeController::DeviceUpdateSingleLED(int)
+{
+    DeviceUpdateLEDs();
+}
+
+void SignalBridgeController::DeviceUpdateZoneMode(int)
+{
+}
+
+void SignalBridgeController::DeviceSaveMode()
+{
+}
+
+void SignalBridgeController::DeviceConfigureZone(int)
+{
+}
+#endif
 
 void SignalBridgeController::DeviceUpdateMode()
 {
@@ -372,6 +603,16 @@ const std::string& SignalBridgeController::ConfigKey() const
 const ScriptMeta& SignalBridgeController::ScriptMetadata() const
 {
     return meta_;
+}
+
+std::string SignalBridgeController::Name() const
+{
+    std::lock_guard<std::mutex> lock(mutex_);
+#if SIGNALBRIDGE_OPENRGB_API_VERSION == 4
+    return name;
+#else
+    return setup_.name;
+#endif
 }
 
 void SignalBridgeController::SetConfigurationValue(const QString& property, const QJsonValue& value)
@@ -421,7 +662,9 @@ void SignalBridgeController::DrainPendingConfigurationChanges()
         if(!topology.isEmpty())
         {
             BuildZonesFromTopology(topology);
+#if SIGNALBRIDGE_OPENRGB_API_VERSION == 4
             SetupColors();
+#endif
         }
     }
     catch(const std::exception& err)
@@ -495,11 +738,57 @@ void SignalBridgeController::InitializeScript()
 
 void SignalBridgeController::BuildZonesFromTopology(const QJsonObject& topology)
 {
+#if SIGNALBRIDGE_OPENRGB_API_VERSION == 4
     DeleteZoneMaps(zones);
     TopologyResult mapped = BuildOpenRgbTopology(topology, meta_, name);
     name = mapped.controller_name;
     zones = std::move(mapped.zones);
     zone_targets_ = std::move(mapped.targets);
     RebuildOpenRgbLedList(zones, zone_targets_, type, leds, led_alt_names);
+#else
+    DeleteZoneMaps(setup_.zones);
+    TopologyResult mapped = BuildOpenRgbTopology(topology, meta_, setup_.name);
+    setup_.name = mapped.controller_name;
+    setup_.zones = std::move(mapped.zones);
+    zone_targets_ = std::move(mapped.targets);
+    RebuildOpenRgbLedList(setup_.zones, zone_targets_, setup_.type, setup_.leds, led_display_names_);
+
+    unsigned int start_index = 0;
+    for(zone& current_zone : setup_.zones)
+    {
+        current_zone.start_idx = start_index;
+        start_index += current_zone.leds_count;
+    }
+
+    if(openrgb_host_ != nullptr && openrgb_controller_ != nullptr)
+    {
+        topology_update_pending_ = true;
+        topology_update_cv_.notify_one();
+    }
+#endif
+}
+
+void SignalBridgeController::SnapshotOpenRgbState(
+    std::vector<zone>& openrgb_zones,
+    std::vector<RGBColor>& openrgb_colors) const
+{
+#if SIGNALBRIDGE_OPENRGB_API_VERSION == 4
+    openrgb_zones = zones;
+    openrgb_colors = colors;
+#else
+    openrgb_zones = setup_.zones;
+    openrgb_colors.assign(setup_.leds.size(), 0);
+    if(openrgb_controller_ == nullptr || openrgb_colors.empty())
+    {
+        return;
+    }
+
+    RGBColor* colors = openrgb_controller_->GetColorsPointer();
+    if(colors != nullptr)
+    {
+        const std::size_t copy_count = std::min(published_led_count_, openrgb_colors.size());
+        std::copy(colors, colors + copy_count, openrgb_colors.begin());
+    }
+#endif
 }
 }
