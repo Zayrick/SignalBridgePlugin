@@ -10,3 +10,6 @@
 [submodule "deps/CSerialPort"]
 	path = deps/CSerialPort
 	url = https://github.com/itas109/CSerialPort.git
+[submodule "deps/OpenRGB_API5"]
+	path = deps/OpenRGB_API5
+	url = https://gitlab.com/CalcProgrammer1/OpenRGB.git
