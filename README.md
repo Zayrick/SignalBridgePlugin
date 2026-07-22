@@ -2,7 +2,7 @@
 
 An OpenRGB plugin that runs user-supplied SignalRGB-compatible JavaScript device plugins in OpenRGB.
 
-[![Version](https://img.shields.io/badge/version-0.1.0-blue.svg)](https://github.com/yourusername/SignalBridgePlugin)
+[![Version](https://img.shields.io/badge/version-0.1.0-blue.svg)](https://github.com/Zayrick/SignalBridgePlugin)
 [![License](https://img.shields.io/badge/license-GPL--2.0--or--later-green.svg)](LICENSE)
 
 [中文文档](README.zh-CN.md) | [English](README.md)
@@ -42,7 +42,7 @@ SignalRGB and OpenRGB names are used only to describe compatibility with their r
 
 ### 1. Clone the Repository
 ```bash
-git clone https://github.com/yourusername/SignalBridgePlugin.git
+git clone https://github.com/Zayrick/SignalBridgePlugin.git
 cd SignalBridgePlugin
 git submodule update --init --recursive
 ```
@@ -281,7 +281,7 @@ Third-party components, OpenRGB headers/source files, QuickJS, hidapi, and user-
 ## Support
 
 For issues, questions, or suggestions:
-- Open an issue on [GitHub](https://github.com/yourusername/SignalBridgePlugin/issues)
+- Open an issue on [GitHub](https://github.com/Zayrick/SignalBridgePlugin/issues)
 - Check existing documentation in [AGENTS.md](AGENTS.md)
 
 ---
