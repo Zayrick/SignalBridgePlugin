@@ -35,7 +35,7 @@ SignalRGB and OpenRGB names are used only to describe compatibility with their r
 ### Build Requirements
 - **CMake**: 3.16 or later
 - **Qt**: 5.15.2 or 6.11.1
-- **Compiler**: MSVC 2019/2022 or compatible C++17 compiler
+- **Compiler**: MSVC 2019/2022 or another compiler with C++20 support
 - **Git**: For submodule dependencies
 
 ## Building from Source
@@ -209,11 +209,11 @@ SignalBridgePlugin/
 │   ├── config/              # Configuration persistence
 │   └── ui/                  # Qt widgets
 ├── tests/                   # Unit tests
-└── deps/                    # Dependency submodules (CSerialPort, hidapi, OpenRGB, quickjs)
+└── deps/                    # Dependency submodules (CSerialPort, hidapi, hid-rp, OpenRGB, quickjs)
 ```
 
 ### Code Conventions
-- **C++17** standard
+- **C++20** standard
 - **Qt naming conventions** for Qt types (PascalCase: `QWidget`, `QString`)
 - **Snake_case** for private members with trailing underscore (`resource_manager_`)
 - **QuickJS error handling**: Check `JS_IsException()` after every runtime call

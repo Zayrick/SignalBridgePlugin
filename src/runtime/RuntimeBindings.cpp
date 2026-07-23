@@ -29,16 +29,43 @@ namespace
 {
 constexpr const char* kHostModuleName = "signalbridge:host";
 
-std::string FindEndpointHandleKey(int interface_number, int usage, int usage_page)
+std::string FindEndpointHandleKey(int interface_number, int usage, int usage_page, int collection)
 {
     std::ostringstream exact;
-    exact << interface_number << ":" << usage << ":" << usage_page;
+    exact << interface_number << ":" << usage << ":" << usage_page << ":" << collection;
     return exact.str();
 }
 
 bool UsagePagesCompatible(int a, int b)
 {
     return a == b || (a >= 0xFF00 && b >= 0xFF00);
+}
+
+struct EndpointHandleIdentity
+{
+    int interface_number = 0;
+    int usage = 0;
+    int usage_page = 0;
+    int collection = 0;
+};
+
+bool ParseEndpointHandleKey(const std::string& key, EndpointHandleIdentity& identity)
+{
+    char colon1 = 0;
+    char colon2 = 0;
+    char colon3 = 0;
+    std::istringstream stream(key);
+    if(!(stream >> identity.interface_number >> colon1 >>
+         identity.usage >> colon2 >>
+         identity.usage_page >> colon3 >>
+         identity.collection) ||
+       colon1 != ':' || colon2 != ':' || colon3 != ':')
+    {
+        return false;
+    }
+
+    stream >> std::ws;
+    return stream.eof();
 }
 
 std::string FormatJsValue(JSContext* context, JSValueConst value)
@@ -122,56 +149,64 @@ HidBackend::Handle FindEndpointHandle(
     const std::map<std::string, HidBackend::Handle>& handles,
     int interface_number,
     int usage,
-    int usage_page)
+    int usage_page,
+    int collection)
 {
-    const std::string exact = FindEndpointHandleKey(interface_number, usage, usage_page);
-    const auto exact_it = handles.find(exact);
-    if(exact_it != handles.end())
+    if(collection >= 0)
     {
-        return exact_it->second;
-    }
-
-    std::vector<HidBackend::Handle> matched;
-    for(const auto& item : handles)
-    {
-        int iface = 0;
-        int candidate_usage = 0;
-        int candidate_page = 0;
-        char colon1 = 0;
-        char colon2 = 0;
-        std::istringstream stream(item.first);
-        if(stream >> iface >> colon1 >> candidate_usage >> colon2 >> candidate_page &&
-           colon1 == ':' && colon2 == ':' &&
-           iface == interface_number &&
-           candidate_usage == usage &&
-           UsagePagesCompatible(candidate_page, usage_page))
+        const std::string exact =
+            FindEndpointHandleKey(interface_number, usage, usage_page, collection);
+        const auto exact_it = handles.find(exact);
+        if(exact_it != handles.end())
         {
-            matched.push_back(item.second);
+            return exact_it->second;
         }
     }
-    if(matched.size() == 1)
+
+    const auto find_unique = [&](bool require_interface, bool require_exact_usage_page) {
+        std::vector<HidBackend::Handle> matched;
+        for(const auto& item : handles)
+        {
+            EndpointHandleIdentity candidate;
+            if(!ParseEndpointHandleKey(item.first, candidate) ||
+               candidate.usage != usage ||
+               (collection >= 0 && candidate.collection != collection) ||
+               (require_interface && candidate.interface_number != interface_number))
+            {
+                continue;
+            }
+
+            const bool usage_page_matches =
+                require_exact_usage_page
+                    ? candidate.usage_page == usage_page
+                    : UsagePagesCompatible(candidate.usage_page, usage_page);
+            if(usage_page_matches)
+            {
+                matched.push_back(item.second);
+            }
+        }
+        return matched.size() == 1 ? matched.front() : HidBackend::Handle{ 0 };
+    };
+
+    HidBackend::Handle matched = find_unique(true, true);
+    if(matched != 0)
     {
-        return matched.front();
+        return matched;
     }
 
-    matched.clear();
-    for(const auto& item : handles)
+    matched = find_unique(true, false);
+    if(matched != 0)
     {
-        int iface = 0;
-        int candidate_usage = 0;
-        int candidate_page = 0;
-        char colon1 = 0;
-        char colon2 = 0;
-        std::istringstream stream(item.first);
-        if(stream >> iface >> colon1 >> candidate_usage >> colon2 >> candidate_page &&
-           colon1 == ':' && colon2 == ':' &&
-           candidate_usage == usage &&
-           UsagePagesCompatible(candidate_page, usage_page))
-        {
-            matched.push_back(item.second);
-        }
+        return matched;
     }
-    return matched.size() == 1 ? matched.front() : 0;
+
+    matched = find_unique(false, true);
+    if(matched != 0)
+    {
+        return matched;
+    }
+
+    return find_unique(false, false);
 }
 
 QJsonArray EndpointsToJson(const std::vector<EndpointDescriptor>& endpoints)
@@ -183,7 +218,7 @@ QJsonArray EndpointsToJson(const std::vector<EndpointDescriptor>& endpoints)
         object.insert("interface", endpoint.interface_number);
         object.insert("usage", endpoint.usage);
         object.insert("usage_page", endpoint.usage_page);
-        object.insert("collection", 0);
+        object.insert("collection", endpoint.collection);
         array.append(object);
     }
     return array;
@@ -571,6 +606,7 @@ JSValue HidSetEndpointJs(JSContext* context, JSValueConst, int argc, JSValueCons
     int interface_number = -1;
     int usage = -1;
     int usage_page = -1;
+    int collection = -1;
     if(JS_IsObject(argv[0]) && argc == 1)
     {
         JSValue value = JS_GetPropertyStr(context, argv[0], "interface");
@@ -582,12 +618,16 @@ JSValue HidSetEndpointJs(JSContext* context, JSValueConst, int argc, JSValueCons
         value = JS_GetPropertyStr(context, argv[0], "usage_page");
         usage_page = JsToInt(context, value, -1);
         JS_FreeValue(context, value);
+        value = JS_GetPropertyStr(context, argv[0], "collection");
+        collection = JsToInt(context, value, -1);
+        JS_FreeValue(context, value);
     }
     else
     {
         interface_number = JsToInt(context, argv[0], -1);
         usage = argc > 1 ? JsToInt(context, argv[1], -1) : -1;
         usage_page = argc > 2 ? JsToInt(context, argv[2], -1) : -1;
+        collection = argc > 3 ? JsToInt(context, argv[3], -1) : -1;
     }
 
     if(usage < 0 || usage_page < 0)
@@ -599,7 +639,8 @@ JSValue HidSetEndpointJs(JSContext* context, JSValueConst, int argc, JSValueCons
         state->endpoint_handles,
         interface_number,
         usage,
-        usage_page);
+        usage_page,
+        collection);
     if(handle == 0)
     {
         return JS_NewBool(context, false);
@@ -1354,7 +1395,7 @@ void RegisterDevice(JSContext* context)
     SetFunctionProperty(context, device, "send_report", HidSendReportJs, 2);
     SetFunctionProperty(context, device, "get_report", HidGetReportJs, 2);
     SetFunctionProperty(context, device, "input_report", HidInputReportJs, 2);
-    SetFunctionProperty(context, device, "set_endpoint", HidSetEndpointJs, 3);
+    SetFunctionProperty(context, device, "set_endpoint", HidSetEndpointJs, 4);
     SetFunctionProperty(context, device, "getHidEndpoints", HidGetEndpointsJs);
     SetFunctionProperty(context, device, "getHidInfo", DeviceGetHidInfoJs);
     SetFunctionProperty(context, device, "getDeviceInfo", DeviceGetDeviceInfoJs);

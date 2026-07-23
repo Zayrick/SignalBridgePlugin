@@ -2,6 +2,7 @@
 #define SIGNALBRIDGE_HID_BACKEND_H
 
 #include <cstdint>
+#include <functional>
 #include <mutex>
 #include <optional>
 #include <string>
@@ -18,6 +19,8 @@ class HidBackend
 {
 public:
     using Handle = std::uint64_t;
+    using ReportDescriptorReader =
+        std::function<std::vector<std::uint8_t>(const std::string& path)>;
 
     HidBackend();
     ~HidBackend();
@@ -39,6 +42,9 @@ public:
 
     std::vector<HidInfo> CollectEndpoints(const HidInfo& primary) const;
 
+    static void AssignCollectionIndices(
+        std::vector<HidInfo>& devices,
+        const ReportDescriptorReader& read_report_descriptor = {});
     static std::string EndpointKey(const HidInfo& info);
     static std::string NormalizeDevicePath(const std::string& path);
 

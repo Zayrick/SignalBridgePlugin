@@ -2,11 +2,14 @@
 
 #include <algorithm>
 #include <cctype>
+#include <map>
+#include <memory>
 #include <stdexcept>
 
 #include <QString>
 
 #include "domain/PathUtils.h"
+#include "hid/HidReportDescriptor.h"
 
 namespace signalbridge
 {
@@ -46,6 +49,40 @@ std::optional<std::string> InstanceKey(const std::string& path)
     return path.substr(second + 1, third == std::string::npos ? std::string::npos : third - second - 1);
 }
 
+bool HasCollectionMarker(const std::string& path)
+{
+    const std::string upper = UpperAscii(path);
+    return upper.find("&COL") != std::string::npos ||
+           upper.find("#COL") != std::string::npos ||
+           upper.find("_COL") != std::string::npos;
+}
+
+std::string CollectionIndependentInstance(const std::string& path, std::string instance)
+{
+    if(!HasCollectionMarker(path))
+    {
+        return instance;
+    }
+
+    const std::size_t suffix = instance.rfind('&');
+    if(suffix == std::string::npos || suffix + 1 >= instance.size())
+    {
+        return instance;
+    }
+
+    const bool hex_suffix = std::all_of(
+        instance.begin() + static_cast<std::string::difference_type>(suffix + 1),
+        instance.end(),
+        [](char value) {
+            return std::isxdigit(static_cast<unsigned char>(value)) != 0;
+        });
+    if(hex_suffix)
+    {
+        instance.erase(suffix);
+    }
+    return instance;
+}
+
 HidInfo FromDeviceInfo(const hid_device_info* device)
 {
     HidInfo info;
@@ -59,6 +96,28 @@ HidInfo FromDeviceInfo(const hid_device_info* device)
     info.usage = device->usage;
     info.usage_page = device->usage_page;
     return info;
+}
+
+std::vector<std::uint8_t> ReadReportDescriptor(const std::string& path)
+{
+    std::unique_ptr<hid_device, decltype(&hid_close)> device(
+        hid_open_path(path.c_str()),
+        &hid_close);
+    if(!device)
+    {
+        return {};
+    }
+
+    std::vector<std::uint8_t> descriptor(HID_API_MAX_REPORT_DESCRIPTOR_SIZE);
+    const int size =
+        hid_get_report_descriptor(device.get(), descriptor.data(), descriptor.size());
+    if(size <= 0)
+    {
+        return {};
+    }
+
+    descriptor.resize(static_cast<std::size_t>(size));
+    return descriptor;
 }
 }
 
@@ -91,6 +150,7 @@ std::vector<HidInfo> HidBackend::Enumerate(std::optional<std::uint16_t> vid,
     }
 
     hid_free_enumeration(head);
+    AssignCollectionIndices(devices, ReadReportDescriptor);
     return devices;
 }
 
@@ -265,11 +325,103 @@ std::vector<HidInfo> HidBackend::CollectEndpoints(const HidInfo& primary) const
     return endpoints;
 }
 
+void HidBackend::AssignCollectionIndices(
+    std::vector<HidInfo>& devices,
+    const ReportDescriptorReader& read_report_descriptor)
+{
+    using PathDevices = std::map<std::string, std::vector<std::size_t>>;
+    std::map<std::string, PathDevices> devices_by_physical_interface;
+
+    for(std::size_t index = 0; index < devices.size(); ++index)
+    {
+        HidInfo& device = devices[index];
+        if(device.path.empty())
+        {
+            device.collection = 0;
+            continue;
+        }
+
+        std::string group = NormalizeDevicePath(device.path);
+        if(group.empty())
+        {
+            group = device.path;
+        }
+        group += ":" + std::to_string(device.interface_number.value_or(-1));
+        devices_by_physical_interface[group][device.path].push_back(index);
+    }
+
+    for(const auto& interface_group : devices_by_physical_interface)
+    {
+        int path_collection_offset = 0;
+        for(const auto& path_group : interface_group.second)
+        {
+            std::vector<HidTopLevelCollection> parsed_collections;
+            if(read_report_descriptor)
+            {
+                parsed_collections =
+                    ParseHidTopLevelCollections(read_report_descriptor(path_group.first));
+            }
+
+            std::size_t collection_slots =
+                std::max<std::size_t>(1, path_group.second.size());
+            for(const HidTopLevelCollection& collection : parsed_collections)
+            {
+                if(collection.collection >= 0)
+                {
+                    collection_slots = std::max(
+                        collection_slots,
+                        static_cast<std::size_t>(collection.collection) + 1);
+                }
+            }
+
+            std::vector<bool> used_collections(collection_slots, false);
+            for(std::size_t device_index : path_group.second)
+            {
+                HidInfo& device = devices[device_index];
+                int local_collection = -1;
+                for(const HidTopLevelCollection& collection : parsed_collections)
+                {
+                    if(collection.collection < 0 ||
+                       static_cast<std::size_t>(collection.collection) >= used_collections.size() ||
+                       used_collections[static_cast<std::size_t>(collection.collection)] ||
+                       collection.usage != device.usage.value_or(0) ||
+                       collection.usage_page != device.usage_page.value_or(0))
+                    {
+                        continue;
+                    }
+
+                    local_collection = collection.collection;
+                    break;
+                }
+
+                if(local_collection < 0)
+                {
+                    const auto unused = std::find(
+                        used_collections.begin(),
+                        used_collections.end(),
+                        false);
+                    local_collection = unused != used_collections.end()
+                                           ? static_cast<int>(std::distance(
+                                                 used_collections.begin(),
+                                                 unused))
+                                           : 0;
+                }
+
+                used_collections[static_cast<std::size_t>(local_collection)] = true;
+                device.collection = path_collection_offset + local_collection;
+            }
+
+            path_collection_offset += static_cast<int>(collection_slots);
+        }
+    }
+}
+
 std::string HidBackend::EndpointKey(const HidInfo& info)
 {
     return std::to_string(info.interface_number.value_or(0)) + ":" +
            std::to_string(info.usage.value_or(0)) + ":" +
-           std::to_string(info.usage_page.value_or(0));
+           std::to_string(info.usage_page.value_or(0)) + ":" +
+           std::to_string(info.collection);
 }
 
 std::string HidBackend::NormalizeDevicePath(const std::string& path)
@@ -298,7 +450,7 @@ std::string HidBackend::NormalizeDevicePath(const std::string& path)
     const std::optional<std::string> instance = InstanceKey(path);
     if(instance.has_value())
     {
-        return vid_pid + "#" + UpperAscii(*instance);
+        return vid_pid + "#" + UpperAscii(CollectionIndependentInstance(path, *instance));
     }
 
     return vid_pid;

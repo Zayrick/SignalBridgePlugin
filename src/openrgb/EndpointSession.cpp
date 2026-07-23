@@ -44,6 +44,7 @@ void EndpointSession::Open()
             endpoint.interface_number.value_or(0),
             endpoint.usage.value_or(0),
             endpoint.usage_page.value_or(0),
+            endpoint.collection,
         });
 
         if(endpoint_handles_.find(key) != endpoint_handles_.end())

@@ -1,5 +1,7 @@
 #include "config/DeviceConfigStore.h"
 
+#include <string>
+
 #include <QFile>
 #include <QJsonDocument>
 #include <QSaveFile>
@@ -93,7 +95,10 @@ QString DeviceConfigStore::StorePath() const
 
     const filesystem::path directory = configuration_root_ / "SignalBridge";
     filesystem::create_directories(directory);
-    return QString::fromStdString((directory / "device_config.json").generic_u8string());
+    const auto path = (directory / "device_config.json").generic_u8string();
+    return QString::fromUtf8(
+        reinterpret_cast<const char*>(path.data()),
+        static_cast<int>(path.size()));
 }
 
 bool DeviceConfigStore::Save() const

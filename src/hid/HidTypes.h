@@ -18,6 +18,7 @@ struct HidInfo
     std::optional<int> interface_number;
     std::optional<std::uint16_t> usage;
     std::optional<std::uint16_t> usage_page;
+    int collection = 0;
 };
 }
 

@@ -88,7 +88,7 @@ bool ValidateScriptEndpoint(
         endpoint.insert("interface", hid.interface_number.value_or(-1));
         endpoint.insert("usage", hid.usage.value_or(0));
         endpoint.insert("usage_page", hid.usage_page.value_or(0));
-        endpoint.insert("collection", 0);
+        endpoint.insert("collection", hid.collection);
 
         QJsonArray args;
         args.append(endpoint);
@@ -138,7 +138,10 @@ void DiscoveryService::Discover(
 
         const filesystem::path script_path = manager->GetConfigurationDirectory() / "SignalBridge" / "scripts";
         filesystem::create_directories(script_path);
-        const std::string script_dir = script_path.generic_u8string();
+        const auto script_path_utf8 = script_path.generic_u8string();
+        const std::string script_dir(
+            reinterpret_cast<const char*>(script_path_utf8.data()),
+            script_path_utf8.size());
         int last_scan_progress = -1;
         ScriptLogCallback scan_log_callback =
             [generation, callbacks](const std::string& source, const std::string& message) {

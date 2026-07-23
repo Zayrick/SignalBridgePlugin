@@ -114,7 +114,7 @@ Windows sandbox may fail with `CreateProcessAsUserW failed: 1312`. When this hap
 
 ## Code Conventions
 
-- C++17 standard
+- C++20 standard
 - Qt naming conventions for Qt types (PascalCase with prefixes: QWidget, QString)
 - Snake_case for private member variables with trailing underscore (`resource_manager_`)
 - Use OpenRGB's RGBController API patterns for LED/zone updates

@@ -16,6 +16,7 @@
 #include "domain/ControlParameters.h"
 #include "domain/PathUtils.h"
 #include "domain/ScriptTypes.h"
+#include "hid/HidReportDescriptor.h"
 #include "openrgb/FrameBuilder.h"
 #include "openrgb/TopologyMapper.h"
 #include "runtime/SignalRgbRuntimeFactory.h"
@@ -38,6 +39,83 @@ bool TestPathUtils()
     return Check(NormalizeLookupPath("devices\\foo/../bar.js") == "devices/bar.js", "NormalizeLookupPath collapses separators and ..") &&
            Check(LookupDir("devices/keyboards/foo.js") == "devices/keyboards", "LookupDir returns parent lookup path") &&
            Check(JoinLookupPath("devices", "foo.js") == "devices/foo.js", "JoinLookupPath joins relative module paths");
+}
+
+bool TestHidCollectionIdentity()
+{
+    using namespace signalbridge;
+
+    HidInfo windows_first;
+    windows_first.path =
+        R"(\\?\hid#vid_046d&pid_c534&mi_01&col01#7&1ebb799e&0&0000#{4d1e55b2-f16f-11cf-88cb-001111000030})";
+    windows_first.interface_number = 1;
+    windows_first.usage = 1;
+    windows_first.usage_page = 0x000C;
+
+    HidInfo windows_second = windows_first;
+    windows_second.path =
+        R"(\\?\hid#vid_046d&pid_c534&mi_01&col02#7&1ebb799e&0&0001#{4d1e55b2-f16f-11cf-88cb-001111000030})";
+
+    HidInfo shared_path_first;
+    shared_path_first.path = "/dev/hidraw7";
+    shared_path_first.interface_number = 3;
+    shared_path_first.usage = 1;
+    shared_path_first.usage_page = 0xFF13;
+
+    HidInfo shared_path_second = shared_path_first;
+    shared_path_second.usage = 2;
+
+    HidInfo other_path = shared_path_first;
+    other_path.path = "/dev/hidraw8";
+
+    const std::vector<std::uint8_t> report_descriptor = {
+        0x06, 0x13, 0xFF,
+        0x09, 0x02,
+        0xA1, 0x01,
+        0xC0,
+        0x06, 0x13, 0xFF,
+        0x09, 0x01,
+        0xA1, 0x01,
+        0xC0,
+    };
+    const std::vector<HidTopLevelCollection> parsed =
+        ParseHidTopLevelCollections(report_descriptor);
+
+    std::vector<HidInfo> devices = {
+        windows_second,
+        windows_first,
+        shared_path_first,
+        shared_path_second,
+        other_path,
+    };
+    HidBackend::AssignCollectionIndices(
+        devices,
+        [&](const std::string& path) {
+            return path == "/dev/hidraw7"
+                       ? report_descriptor
+                       : std::vector<std::uint8_t>();
+        });
+
+    const bool explicit_indices =
+        devices[0].collection == 1 && devices[1].collection == 0;
+    const bool descriptor_indices =
+        devices[2].collection == 1 && devices[3].collection == 0;
+    const bool parser_result =
+        parsed.size() == 2 &&
+        parsed[0].usage_page == 0xFF13 && parsed[0].usage == 2 && parsed[0].collection == 0 &&
+        parsed[1].usage_page == 0xFF13 && parsed[1].usage == 1 && parsed[1].collection == 1;
+    const bool windows_collections_share_device =
+        HidBackend::NormalizeDevicePath(devices[0].path) ==
+        HidBackend::NormalizeDevicePath(devices[1].path);
+    const bool endpoint_keys_include_collection =
+        HidBackend::EndpointKey(devices[2]) != HidBackend::EndpointKey(devices[3]);
+
+    return Check(explicit_indices, "Windows COLxx paths map to zero-based collection indices") &&
+           Check(parser_result, "hid-rp extracts top-level collection usage and order") &&
+           Check(descriptor_indices, "same-path HID usages map to hid-rp collection indices") &&
+           Check(devices[4].collection == 0, "unavailable descriptors retain collection zero fallback") &&
+           Check(windows_collections_share_device, "Windows collection paths normalize to one device group") &&
+           Check(endpoint_keys_include_collection, "endpoint identity includes collection");
 }
 
 bool TestControlParameters()
@@ -311,7 +389,7 @@ export function Snapshot() {
     hid.product = "AK820";
 
     std::vector<EndpointDescriptor> endpoints;
-    endpoints.push_back(EndpointDescriptor{ 2, 1, 0xFF00 });
+    endpoints.push_back(EndpointDescriptor{ 2, 1, 0xFF00, 3 });
 
     QuickJsRuntime runtime = SignalRgbRuntimeFactory::CreateDeviceRuntime(
         nullptr,
@@ -337,8 +415,96 @@ export function Snapshot() {
            Check(snapshot.value("hidInfo").toObject().value("pid").toInt() == 0x5678, "native device runtime exposes primary PID") &&
            Check(snapshot.value("deviceInfo").toObject().value("product").toString() == "AK820", "native device runtime exposes HID product name") &&
            Check(snapshot.value("endpoints").toArray().size() == 1, "native device runtime exposes HID endpoints") &&
+           Check(snapshot.value("endpoints").toArray().first().toObject().value("collection").toInt(-1) == 3,
+                 "native device runtime exposes endpoint collection") &&
            Check(color.size() == 3 && color.at(0).toInt() == 7 && color.at(1).toInt() == 8 && color.at(2).toInt() == 9,
                  "native device runtime reads OpenRGB frame through device.color");
+}
+
+bool TestNativeEndpointSelection()
+{
+    using namespace signalbridge;
+
+    const std::string lookup = "native-endpoint-selection-test.js";
+    const std::string source = R"JS(
+export function Select(collection) {
+    return device.set_endpoint(3, 1, 0xFF13, collection);
+}
+export function SelectObject(collection) {
+    return device.set_endpoint({
+        interface: 3,
+        usage: 1,
+        usage_page: 0xFF13,
+        collection,
+    });
+}
+export function SelectWithoutCollection() {
+    return device.set_endpoint(3, 1, 0xFF13);
+}
+)JS";
+
+    ScriptMeta meta;
+    meta.lookup_path = lookup;
+    meta.source_path = lookup;
+    meta.name = "Native Endpoint Selection Test";
+    meta.module_sources = { ScriptSource{ lookup, lookup, source } };
+
+    HidInfo first;
+    first.interface_number = 3;
+    first.usage = 1;
+    first.usage_page = 0xFF13;
+    first.collection = 0;
+
+    HidInfo second = first;
+    second.collection = 1;
+
+    constexpr HidBackend::Handle first_handle = 101;
+    constexpr HidBackend::Handle second_handle = 202;
+    std::map<std::string, HidBackend::Handle> handles = {
+        { HidBackend::EndpointKey(first), first_handle },
+        { HidBackend::EndpointKey(second), second_handle },
+    };
+    std::vector<EndpointDescriptor> endpoints = {
+        { 3, 1, 0xFF13, 0 },
+        { 3, 1, 0xFF13, 1 },
+    };
+
+    QuickJsRuntime runtime = SignalRgbRuntimeFactory::CreateDeviceRuntime(
+        nullptr,
+        meta,
+        first_handle,
+        first,
+        handles,
+        endpoints);
+    RuntimeCallbackState* state = runtime.MutableState();
+
+    bool ok =
+        Check(runtime.CallModuleExportJson("Select", QJsonArray{ 1 }).toBool(false),
+              "set_endpoint accepts positional collection") &&
+        Check(state->active_handle == second_handle,
+              "positional collection selects the matching endpoint handle");
+
+    state->active_handle = second_handle;
+    ok = Check(runtime.CallModuleExportJson("SelectObject", QJsonArray{ 0 }).toBool(false),
+               "set_endpoint accepts object collection") &&
+         Check(state->active_handle == first_handle,
+               "object collection selects the matching endpoint handle") &&
+         ok;
+
+    state->active_handle = first_handle;
+    ok = Check(!runtime.CallModuleExportJson("SelectWithoutCollection").toBool(true),
+               "set_endpoint rejects an ambiguous endpoint when collection is omitted") &&
+         Check(state->active_handle == first_handle,
+               "ambiguous endpoint selection leaves the active handle unchanged") &&
+         ok;
+
+    ok = Check(!runtime.CallModuleExportJson("Select", QJsonArray{ 2 }).toBool(true),
+               "set_endpoint rejects an unavailable collection") &&
+         Check(state->active_handle == first_handle,
+               "missing collection selection leaves the active handle unchanged") &&
+         ok;
+
+    return ok;
 }
 
 bool TestSerialDeviceRuntime()
@@ -546,12 +712,14 @@ int main()
 {
     bool ok = true;
     ok = TestPathUtils() && ok;
+    ok = TestHidCollectionIdentity() && ok;
     ok = TestControlParameters() && ok;
     ok = TestDeviceConfigStore() && ok;
     ok = TestSystemInfoModule() && ok;
     ok = TestSignalRgbBuiltinModules() && ok;
     ok = TestNativeScanRuntime() && ok;
     ok = TestNativeDeviceRuntime() && ok;
+    ok = TestNativeEndpointSelection() && ok;
     ok = TestSerialDeviceRuntime() && ok;
     ok = TestRuntimeConfigurationCallbacks() && ok;
     ok = TestTopologyAndFrame() && ok;

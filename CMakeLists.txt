@@ -20,7 +20,7 @@ endif()
 set(CMAKE_AUTOUIC ON)
 set(CMAKE_AUTOMOC ON)
 set(CMAKE_AUTORCC ON)
-set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 
@@ -77,6 +77,26 @@ unset(_SIGNALBRIDGE_AUTOUIC)
 unset(_SIGNALBRIDGE_AUTOMOC)
 unset(_SIGNALBRIDGE_AUTORCC)
 
+if(NOT EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/deps/hid-rp/hid-rp/hid/rdf/parser.hpp")
+  message(FATAL_ERROR
+    "The hid-rp submodule is missing. Run: git submodule update --init deps/hid-rp")
+endif()
+
+add_library(SignalBridgeHidReportParser STATIC
+  src/hid/HidReportDescriptor.cpp
+  src/hid/HidReportDescriptor.h
+)
+set_target_properties(SignalBridgeHidReportParser PROPERTIES
+  AUTOMOC OFF
+  AUTOUIC OFF
+  AUTORCC OFF
+)
+target_include_directories(SignalBridgeHidReportParser PUBLIC
+  ${CMAKE_CURRENT_SOURCE_DIR}/src
+)
+target_include_directories(SignalBridgeHidReportParser SYSTEM PRIVATE
+  ${CMAKE_CURRENT_SOURCE_DIR}/deps/hid-rp/hid-rp
+)
 file(GLOB SIGNALBRIDGE_SIGNALRGB_SOURCES CONFIGURE_DEPENDS
   "${CMAKE_CURRENT_SOURCE_DIR}/src/runtime/signalrgb/*.cpp"
   "${CMAKE_CURRENT_SOURCE_DIR}/src/runtime/signalrgb/*.h"
@@ -121,7 +141,13 @@ set(SIGNALBRIDGE_CORE_SOURCES
   ${SIGNALBRIDGE_SIGNALRGB_SOURCES}
 )
 
-set(SIGNALBRIDGE_COMMON_LIBS Qt${QT_VERSION_MAJOR}::Widgets hidapi::hidapi qjs libcserialport)
+set(SIGNALBRIDGE_COMMON_LIBS
+    Qt${QT_VERSION_MAJOR}::Widgets
+    hidapi::hidapi
+    qjs
+    libcserialport
+    SignalBridgeHidReportParser
+)
 set(SIGNALBRIDGE_COMMON_INCLUDES
     ${CMAKE_CURRENT_SOURCE_DIR}/include
     ${CMAKE_CURRENT_SOURCE_DIR}/src
@@ -177,6 +203,10 @@ target_compile_definitions(SignalBridgePlugin PRIVATE
 if(MSVC)
     target_compile_options(SignalBridgePlugin PRIVATE /FS)
 endif()
+if(MSVC AND QT_VERSION_MAJOR EQUAL 5)
+    target_compile_options(SignalBridgePlugin PRIVATE
+        "/FI${CMAKE_CURRENT_SOURCE_DIR}/src/compat/Qt5MsvcCompat.h")
+endif()
 
 option(SIGNALBRIDGE_BUILD_TESTS "Build SignalBridge focused core tests" ON)
 
@@ -192,6 +222,10 @@ if(SIGNALBRIDGE_BUILD_TESTS)
     target_compile_definitions(SignalBridgeCoreTests PRIVATE ${SIGNALBRIDGE_COMMON_DEFINITIONS})
     if(MSVC)
         target_compile_options(SignalBridgeCoreTests PRIVATE /FS)
+    endif()
+    if(MSVC AND QT_VERSION_MAJOR EQUAL 5)
+        target_compile_options(SignalBridgeCoreTests PRIVATE
+            "/FI${CMAKE_CURRENT_SOURCE_DIR}/src/compat/Qt5MsvcCompat.h")
     endif()
     target_include_directories(SignalBridgeCoreTests PRIVATE ${SIGNALBRIDGE_COMMON_INCLUDES})
     add_test(

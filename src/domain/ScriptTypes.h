@@ -43,6 +43,7 @@ struct EndpointDescriptor
     int interface_number = 0;
     int usage = 0;
     int usage_page = 0;
+    int collection = 0;
 };
 
 using ScriptLogCallback = std::function<void(const std::string& source, const std::string& message)>;
