@@ -256,16 +256,15 @@ jobs:
           TAG: main-latest
         run: |
           set -euo pipefail
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release delete "$TAG" --yes
+          fi
+
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git tag -f "$TAG" "$GITHUB_SHA"
           git push -f origin "refs/tags/$TAG"
 
           notes="Automated builds from main at ${GITHUB_SHA}."
-          if gh release view "$TAG" >/dev/null 2>&1; then
-            gh release edit "$TAG" --title "Latest main builds" --notes "$notes" --prerelease
-          else
-            gh release create "$TAG" --title "Latest main builds" --notes "$notes" --prerelease
-          fi
-
-          gh release upload "$TAG" release-assets/* --clobber
+          gh release create "$TAG" --title "Latest main builds" --notes "$notes" --prerelease
+          gh release upload "$TAG" release-assets/*
