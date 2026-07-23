@@ -13,3 +13,6 @@
 [submodule "deps/OpenRGB_API5"]
 	path = deps/OpenRGB_API5
 	url = https://gitlab.com/CalcProgrammer1/OpenRGB.git
+[submodule "deps/hid-rp"]
+	path = deps/hid-rp
+	url = https://github.com/IntergatedCircuits/hid-rp.git
